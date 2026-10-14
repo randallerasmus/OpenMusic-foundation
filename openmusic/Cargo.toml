@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/openmusic-core", "crates/openmusic-cli", "src-tauri"]
+resolver = "2"
