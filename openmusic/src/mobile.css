@@ -1,0 +1,168 @@
+/* Phone layout (see mobile.tsx). Follows the system light/dark setting; the desktop layout stays dark. */
+.m-app{--bg:#fff;--text:#000;--text2:#8a8a8e;--sep:rgba(60,60,67,.2);--chev:#c4c4c8;--accent:#d9437a;--fill:rgba(120,120,128,.14);--glass:rgba(255,255,255,.66);--glass-edge:rgba(0,0,0,.07);--shadow:0 6px 24px rgba(0,0,0,.1);--art:linear-gradient(135deg,#f6d3e0,#e3d6f3);--art-icon:#c45b85;
+ position:fixed;inset:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+@media(prefers-color-scheme:dark){.m-app{--bg:#000;--text:#fff;--text2:#98989f;--sep:rgba(84,84,88,.6);--chev:#5b5b60;--accent:#f0709f;--fill:rgba(120,120,128,.28);--glass:rgba(38,38,42,.66);--glass-edge:rgba(255,255,255,.09);--shadow:0 6px 24px rgba(0,0,0,.5);--art:linear-gradient(135deg,#4a2c3c,#2e2a45);--art-icon:#e489ac}}
+/* Zero-specificity reset so component classes below always win */
+:where(.m-app button){border:0;background:none;color:inherit;padding:0;-webkit-tap-highlight-color:transparent}
+.m-scroll{height:100%;overflow-y:auto;overscroll-behavior:contain;padding:max(14px,env(safe-area-inset-top)) 20px calc(160px + env(safe-area-inset-bottom))}
+
+/* Frosted material shared by the header actions, mini player and tab bar */
+.m-glass{background:var(--glass);-webkit-backdrop-filter:blur(22px) saturate(180%);backdrop-filter:blur(22px) saturate(180%);border:.5px solid var(--glass-edge);box-shadow:var(--shadow)}
+
+/* Header */
+.m-header{margin:6px 0 20px}
+.m-back{display:flex;align-items:center;margin:0 0 6px -8px;font-size:17px;color:var(--accent)}
+.m-title-row{display:flex;align-items:center;gap:12px}
+.m-title-row h1{margin:0 auto 0 0;font-size:34px;font-weight:700;letter-spacing:-.5px;line-height:1.15;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-pill{display:flex;border-radius:999px;padding:2px 4px;flex:none}
+.m-pill button{width:44px;height:40px;display:grid;place-items:center}
+
+/* Artwork placeholders and tiles */
+.m-art{display:grid;place-items:center;flex:none;background:var(--art);color:var(--art-icon);border-radius:10px;aspect-ratio:1;width:100%}
+.m-art svg{width:34%;height:34%}
+.m-art-sm{width:48px;border-radius:6px}.m-art-xs{width:40px;border-radius:7px}
+.m-art-sm svg,.m-art-xs svg{width:20px;height:20px}
+.m-shelf{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 20px;margin:0 -20px 26px;padding:0 20px 4px;scrollbar-width:none}
+.m-shelf::-webkit-scrollbar{display:none}
+.m-shelf:has(>:only-child){justify-content:center}
+.m-shelf .m-tile{width:160px;flex:none;scroll-snap-align:start}
+.m-tile{display:flex;flex-direction:column;gap:3px;text-align:left;min-width:0}
+.m-tile .m-art{margin-bottom:5px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.m-tile-title,.m-tile-sub{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-tile-sub{color:var(--text2)}
+.m-shelf:has(>:only-child) .m-tile{text-align:center}
+.m-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 16px}
+.m-section{font-size:22px;font-weight:700;letter-spacing:-.3px;margin:4px 0 12px}
+.m-section-gap{margin-top:28px}
+
+/* Search browse cards: flat colour per name, oversized icon bleeding off the corner, white label */
+.m-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.m-card{position:relative;overflow:hidden;aspect-ratio:16/10;border-radius:13px;text-align:left;color:#fff;
+ background:hsl(var(--hue) 55% 42%);background:oklch(.56 .16 var(--hue))}
+.m-card-icon{position:absolute;right:-14px;bottom:-18px;transform:rotate(-14deg);color:rgba(255,255,255,.3)}
+.m-card-icon svg{width:92px;height:92px;stroke-width:1.6}
+.m-card-label{position:absolute;left:12px;right:12px;bottom:10px;font-size:17px;font-weight:700;line-height:1.2;text-shadow:0 1px 6px rgba(0,0,0,.18);
+ display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.m-card:active{transform:scale(.97)}
+
+/* Navigation list with dividers inset to the label, not the icon */
+.m-list{list-style:none;margin:0;padding:0}
+.m-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left}
+.m-row-icon{width:32px;display:grid;place-items:center;color:var(--accent);flex:none}
+.m-row-icon svg{width:26px;height:26px}
+.m-row-body{flex:1;min-width:0;min-height:56px;display:flex;align-items:center;gap:8px;border-bottom:.5px solid var(--sep)}
+.m-list li:last-child .m-row-body{border-bottom:0}
+.m-row-label{flex:1;font-size:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-row-accent .m-row-label{color:var(--accent)}
+.m-row-detail{font-size:15px;color:var(--text2);flex:none}
+.m-chevron{color:var(--chev);flex:none}
+
+/* Song rows */
+.m-tracks{list-style:none;margin:0;padding:0}
+.m-track{display:flex;align-items:center}
+.m-track-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left}
+.m-track-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.m-track-text b{font-size:16px;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-track-text small{font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-track .m-track-text{min-height:64px;justify-content:center;border-bottom:.5px solid var(--sep)}
+.m-track.is-playing b{color:var(--accent)}
+.m-track-add{align-self:stretch;width:44px;display:grid;place-items:center;color:var(--accent);border-bottom:.5px solid var(--sep)}
+
+/* Search, banners, empty state */
+.m-banner{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;font-size:14px;margin-bottom:12px}
+.m-banner button{font-weight:600}
+.m-error{background:#fde3e6;color:#8a1426}.m-notice{background:#def3e4;color:#1d5a2f}
+@media(prefers-color-scheme:dark){.m-error{background:#502733;color:#ffe6e8}.m-notice{background:#24322c;color:#bfe3c7}}
+.m-hint{color:var(--text2);font-size:15px}
+.m-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:28px 12px}
+.m-empty .m-art{width:96px;border-radius:22px}
+.m-empty h2{font-size:20px;margin:18px 0 6px}.m-empty p{color:var(--text2);font-size:15px;margin:0 0 18px}
+.m-primary{display:flex;align-items:center;gap:8px;background:var(--accent);color:#fff;font-weight:600;font-size:16px;padding:12px 20px;border-radius:999px}
+
+/* Song action sheet */
+.m-sheet-backdrop{position:fixed;inset:0;z-index:5;background:rgba(0,0,0,.28);display:flex;align-items:flex-end;padding:12px 12px max(12px,env(safe-area-inset-bottom));animation:m-fade .2s ease}
+@keyframes m-fade{from{opacity:0}}
+.m-action-sheet{width:100%;border-radius:22px;padding:6px 0;background:var(--bg);animation:np-in .25s cubic-bezier(.2,.8,.2,1)}
+.m-action-head{display:flex;align-items:center;gap:12px;padding:10px 18px 12px;border-bottom:.5px solid var(--sep)}
+.m-action{display:flex;align-items:center;justify-content:space-between;width:100%;padding:15px 20px;font-size:17px;text-align:left}
+.m-action svg{color:var(--accent);width:22px;height:22px}
+.m-action+.m-action{border-top:.5px solid var(--sep)}
+.m-action-cancel{justify-content:center;font-weight:600;color:var(--accent)}
+
+/* Floating mini player, above the tab bar */
+.m-mini{position:fixed;left:12px;right:12px;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 74px);border-radius:29px;padding:8px 10px 8px 9px;z-index:2}
+.m-mini-row{display:flex;align-items:center;gap:4px}
+.m-mini-info{flex:1;min-width:0;display:flex;align-items:center;gap:11px;text-align:left}
+.m-mini .m-track-text b{font-size:15px;font-weight:600}
+.m-mini-btn{width:44px;height:42px;display:grid;place-items:center;flex:none}
+.m-mini-btn:disabled{opacity:.3}
+.m-mini-info:disabled{opacity:1}
+
+/* Floating tab bar with search split into its own circle */
+.m-tabs{position:fixed;left:12px;right:12px;bottom:max(10px,env(safe-area-inset-bottom));display:flex;gap:10px;z-index:2}
+.m-tabbar{flex:1;display:flex;height:62px;border-radius:999px;padding:4px}
+.m-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:999px;font-size:10px;font-weight:600}
+.m-tab.active{color:var(--accent);background:var(--fill)}
+.m-search-btn{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;flex:none}
+/* On Search: collapsed tab button + wide search field, lifted above the on-screen keyboard */
+.m-tabs-search{bottom:calc(max(10px,env(safe-area-inset-bottom)) + var(--kb,0px));align-items:center;animation:m-fade .2s ease}
+.m-tabs-search .m-search-btn{width:54px;height:54px}
+.m-search-field{flex:1;min-width:0;height:54px;border-radius:999px;display:flex;align-items:center;gap:8px;padding:0 8px 0 18px;color:var(--text2)}
+.m-search-field input{flex:1;min-width:0;height:100%;border:0;outline:0;background:none;color:var(--text);font:inherit;font-size:17px;text-overflow:ellipsis}
+.m-search-field input::-webkit-search-cancel-button{display:none}
+.m-search-field:focus-within{box-shadow:var(--shadow),0 0 0 2px var(--accent)}
+.m-search-clear{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--fill);color:var(--text2)}
+/* While typing, the mini player steps aside like the native app */
+.m-typing .m-mini{display:none}
+
+/* Now Playing sheet (nowPlaying.tsx). Tinted per song via --hue; always white-on-colour regardless of theme. */
+.np{--np-dim:rgba(255,255,255,.68);--np-fill:rgba(255,255,255,.18);position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;color:#fff;
+ padding:0 22px max(18px,env(safe-area-inset-bottom));padding-top:env(safe-area-inset-top);
+ background:radial-gradient(120% 70% at 20% 0%,hsl(var(--hue) 38% 52%),transparent 70%),linear-gradient(180deg,hsl(var(--hue) 30% 40%),hsl(calc(var(--hue) + 25) 32% 20%));
+ animation:np-in .32s cubic-bezier(.2,.8,.2,1);transition:transform .25s ease;touch-action:none}
+@keyframes np-in{from{transform:translateY(100%)}}
+:where(.np button){border:0;background:none;color:inherit;padding:0;-webkit-tap-highlight-color:transparent}
+.np button:disabled{opacity:.4;cursor:default}
+.np-grab-area{display:flex;justify-content:center;padding:10px 0 18px;cursor:grab}
+.np-grabber{width:40px;height:5px;border-radius:3px;background:rgba(255,255,255,.45)}
+.np-head{display:flex;align-items:center;gap:14px}
+.np-art{width:64px;aspect-ratio:1;flex:none;display:grid;place-items:center;border-radius:9px;background:linear-gradient(135deg,hsl(var(--hue) 45% 62%),hsl(calc(var(--hue) + 40) 40% 35%));box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.np-art svg{width:26px;height:26px;opacity:.85}
+.np-titles{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.np-titles b,.np-titles small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.np-titles b{font-size:18px;font-weight:600}.np-titles small{font-size:16px;color:var(--np-dim)}
+.np-round{width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;background:var(--np-fill)}
+.np-modes{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0 22px}
+.np-modes button{height:42px;border-radius:999px;display:grid;place-items:center;background:var(--np-fill)}
+.np-modes button.on{background:rgba(255,255,255,.95);color:hsl(var(--hue) 30% 28%)}
+/* The queue scrolls between the fixed header and controls */
+.np-queue{flex:1;min-height:0;overflow-y:auto;touch-action:pan-y;margin:0 -22px;padding:0 22px 12px;-webkit-mask-image:linear-gradient(#000 calc(100% - 24px),transparent);mask-image:linear-gradient(#000 calc(100% - 24px),transparent)}
+.np-queue h2{font-size:20px;font-weight:700;margin:0}
+.np-source{font-size:14px;color:var(--np-dim);margin:2px 0 0}
+.np-empty{font-size:14px;color:var(--np-dim);margin:10px 0 0;line-height:1.4}
+.np-list{list-style:none;margin:10px 0 0;padding:0}
+.np-list li{display:flex;align-items:center;height:64px;position:relative;transition:transform .15s ease}
+.np-list li.dragging{transition:none;z-index:1;background:rgba(255,255,255,.12);border-radius:10px}
+.np-row{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left}
+.np-art-sm{width:48px;border-radius:6px;box-shadow:none}
+.np-art-sm svg{width:20px;height:20px}
+.np-row .np-titles b{font-size:16px;font-weight:500}.np-row .np-titles small{font-size:14px}
+.np-row-btn{width:36px;height:44px;display:grid;place-items:center;color:var(--np-dim)}
+.np-handle{width:40px;height:44px;display:grid;place-items:center;color:var(--np-dim);touch-action:none;cursor:grab}
+.np-repeat{display:flex;align-items:center;justify-content:center;gap:6px;font-size:15px;font-weight:600;margin:14px 0 0}
+.np-bottom{flex:none;padding-top:8px}
+.np-bar{-webkit-appearance:none;appearance:none;width:100%;height:24px;margin:0;background:none;cursor:pointer}
+.np-bar::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,rgba(255,255,255,.9) var(--pct),rgba(255,255,255,.25) var(--pct));transition:height .15s}
+.np-bar::-moz-range-track{height:6px;border-radius:3px;background:linear-gradient(90deg,rgba(255,255,255,.9) var(--pct),rgba(255,255,255,.25) var(--pct))}
+.np-bar::-webkit-slider-thumb{-webkit-appearance:none;width:0;height:0}
+.np-bar::-moz-range-thumb{width:0;height:0;border:0}
+.np-bar:active::-webkit-slider-runnable-track{height:10px}
+.np-bar:disabled{cursor:default;opacity:.5}
+.np-bar:focus-visible{outline:2px solid #fff;outline-offset:2px;border-radius:4px}
+.np-times{display:flex;justify-content:space-between;font-size:12px;font-weight:500;color:var(--np-dim);font-variant-numeric:tabular-nums;margin-top:2px}
+.np-transport{display:flex;justify-content:space-evenly;align-items:center;margin:26px 0 30px}
+.np-transport button{display:grid;place-items:center;width:72px;height:64px}
+.np-volume{display:flex;align-items:center;gap:12px;color:var(--np-dim)}
+.np-tools{display:flex;justify-content:space-around;align-items:center;margin-top:22px}
+.np-tools button{width:48px;height:48px;border-radius:50%;display:grid;place-items:center}
+.np-tools .active{background:rgba(255,255,255,.95);color:hsl(var(--hue) 30% 28%)}

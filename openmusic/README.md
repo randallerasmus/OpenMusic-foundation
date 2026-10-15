@@ -8,10 +8,11 @@ OpenMusic is an independently designed, open-source, local-first music player. T
 - Rust audio playback via Rodio/CPAL (play, pause, resume, stop, seek, volume) of imported user-owned audio files, subject to codec/device availability.
 - SQLite WAL-mode database; recursive folder import; basic searchable local library with track title derived from filename.
 - Persistent playlists (create, list, add track, list tracks).
+- Persistent play queue: play a list from any song, next/previous, automatic advance at end of track, play next / add to queue, reorder, remove, shuffle and repeat (off/all/one). The queue survives restarts (SQLite on desktop/CLI, localStorage on web).
 - Central `MusicApp::execute(name, args)` command dispatcher shared by Tauri and CLI.
 - JSON-lines CLI control mode (`serve-stdio`), reusable by agents with an explicitly launched local process.
 
-**Important limitations:** Track artist/album tags and duration are NOT extracted yet. Queue, next/previous, shuffle, repeat, lossless-specific hardware configuration, album art, background media keys (desktop), streaming, MCP and advanced accessibility are NOT implemented. Individual codec support depends on Rodio decoder compatibility. The desktop player has a disabled Next button intentionally; it does not invent a queue. If audio output or decoding fails, errors go to stderr for now rather than being propagated through the command acknowledgment; this is tracked for improvement.
+**Important limitations:** Track artist/album tags and duration are NOT extracted yet. Gapless playback, crossfade, autoplay, lossless-specific hardware configuration, album art, background media keys (desktop), streaming, MCP and advanced accessibility are NOT implemented. Individual codec support depends on Rodio decoder compatibility. If audio output or decoding fails, errors go to stderr for now rather than being propagated through the command acknowledgment; this is tracked for improvement.
 
 ## Prerequisites
 
@@ -58,6 +59,7 @@ cargo run -p openmusic-cli -- music.library.scan '{"path":"/Users/yourname/Music
 cargo run -p openmusic-cli -- music.library.list
 cargo run -p openmusic-cli -- music.search '{"query":"piano"}'
 cargo run -p openmusic-cli -- music.playlist.create '{"name":"Morning"}'
+cargo run -p openmusic-cli -- music.queue.set '{"track_ids":[3,1,2],"start_index":0,"source":"Morning"}'
 cargo run -p openmusic-cli -- serve-stdio
 ```
 
@@ -67,7 +69,9 @@ cargo run -p openmusic-cli -- serve-stdio
 {"command":"music.library.list","args":{}}
 ```
 
-and returns one JSON object per line with `ok`, `data` or `error`. Playback runs while this process lives. **Desktop and CLI use distinct default database locations**; a configurable shared data directory is future work.
+and returns one JSON object per line with `ok`, `data` or `error`.
+
+Queue commands: `music.queue.get`, `music.queue.set {track_ids, start_index?, source?}`, `music.queue.add {track_ids, position?: "next"|"last"}`, `music.queue.jump {index}`, `music.queue.remove {index}`, `music.queue.move {from, to}`, `music.queue.clear`, `music.next`, `music.previous` (restarts the track after 3 s), `music.repeat.set {mode: "off"|"all"|"one"}`, `music.shuffle.set {enabled}`. `music.play {track_id}` plays a single track and replaces the queue with it. `music.status` also reports `queue_index`, `queue_length`, `queue_revision`, `repeat`, `shuffle` and `has_next`. Playback runs while this process lives. **Desktop and CLI use distinct default database locations**; a configurable shared data directory is future work.
 
 ## Architecture
 
@@ -94,6 +98,6 @@ Only import media you are authorized to use. No DRM removal, Apple service integ
 1. Run Tauri on target OS, fix compile/runtime issues, verify audio output.
 2. Return playback errors in status / command responses, add tests with fixture audio.
 3. Add music tag parsing and artwork; store durations and album/artist relationships.
-4. Implement persistent queue, next/previous, repeat/shuffle and end-of-track transition.
+4. Gapless playback and crossfade between queued tracks; skip unplayable tracks during auto-advance.
 5. Add metadata editing UI.
 6. Add OS media keys, robust tests, packaging/signed installers, MCP adapter.

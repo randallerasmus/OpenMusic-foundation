@@ -28,7 +28,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let value=app.execute(&args[0],arguments)?;
         println!("{}",serde_json::to_string_pretty(&value)?);
         // Keep playback alive for this CLI process, if requested explicitly.
-        if args[0]=="music.play" { eprintln!("Playing. Press Enter to stop."); let mut line=String::new();io::stdin().read_line(&mut line)?; }
+        if ["music.play","music.queue.set"].contains(&args[0].as_str()) { eprintln!("Playing. Press Enter to stop."); let mut line=String::new();io::stdin().read_line(&mut line)?; }
     }
     Ok(())
 }

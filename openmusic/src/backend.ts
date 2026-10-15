@@ -1,10 +1,14 @@
+import type {RepeatMode} from './queue';
+export type {QueueItem, QueueView, RepeatMode} from './queue';
+
 // One command surface for the UI. The desktop build forwards every command to the Rust
 // `MusicApp::execute` registry; the browser build cannot run Rodio/SQLite, so it implements the
 // same command names on top of IndexedDB and an HTMLAudioElement (see webBackend.ts).
 
 export type Track={id:number,path:string,title:string,artist:string,album:string,duration_seconds:number|null};
 export type Playlist={id:number,name:string};
-export type Playback={track_id:number|null,playing:boolean,volume:number,position_seconds:number,duration_seconds:number|null};
+export type Playback={track_id:number|null,playing:boolean,volume:number,position_seconds:number,duration_seconds:number|null,
+  queue_index:number|null,queue_length:number,queue_revision:number,repeat:RepeatMode,shuffle:boolean,has_next:boolean};
 export type ImportResult={imported:number,already_present:number};
 
 export interface Backend{
