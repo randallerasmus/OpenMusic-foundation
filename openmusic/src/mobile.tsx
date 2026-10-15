@@ -3,7 +3,8 @@ import type {ExtractedAudio, ImportResult, Playback, Playlist, QueueView, Track}
 import {ExtractSheet} from './extractSheet';
 import {buildLabel} from './buildInfo';
 import {getCachedChannel, getSettings} from './youtube';
-import {useYouTube, VideoList, YouTubeScreen, type YouTubeState} from './youtubeScreen';
+import {useYouTube, useYouTubeSearch, VideoList, YouTubePlayer, YouTubeResultList, YouTubeScreen, type YouTubeState} from './youtubeScreen';
+import type {YouTubeResult} from './youtube';
 import {AudioLines, ChevronLeft, CirclePlay, ChevronRight, Clock, Disc3, Ellipsis, FolderPlus, House, Library, ListEnd, ListMusic, ListPlus, ListStart, Mic2, Music2, Pause, Play, Plus, Search, SkipForward, X} from 'lucide-react';
 import {NowPlaying, type SheetMode} from './nowPlaying';
 import './mobile.css';
@@ -23,7 +24,7 @@ export type MobileProps={
  extractAudio?(video:File):Promise<ExtractedAudio>,addAudioFile?(file:File):Promise<ImportResult>,
 };
 /** What the screens get: MobileProps plus actions that also drive the sheet and the song menu. */
-type ViewProps=MobileProps&{playList(tracks:Track[],index:number,source:string):void,trackMenu(t:Track):void,openExtract?():void,yt:YouTubeState};
+type ViewProps=MobileProps&{playList(tracks:Track[],index:number,source:string):void,trackMenu(t:Track):void,openExtract?():void,yt:YouTubeState,watch(v:YouTubeResult):void};
 type Tab='home'|'library'|'search';
 type Screen={name:Tab|'playlists'|'artists'|'albums'|'songs'|'recent'|'youtube'}|{name:'playlist',id:number,title:string}|{name:'artist',artist:string}|{name:'album',album:string};
 
@@ -70,7 +71,10 @@ export function MobileApp(p:MobileProps){
  const [sheetMode,setSheetMode]=useState<SheetMode>('queue');
  const [extracting,setExtracting]=useState(false);
  const yt=useYouTube(getSettings(),getCachedChannel());
- const app:ViewProps={...p,yt,trackMenu:setMenu,openExtract:p.extractAudio&&(()=>setExtracting(true)),playList:(tracks,index,source)=>{
+ const [watching,setWatching]=useState<YouTubeResult|null>(null);
+ // Only one thing plays at a time: opening a YouTube video pauses the library.
+ const watch=(v:YouTubeResult)=>{if(p.status.playing)p.run('music.pause');setWatching(v);};
+ const app:ViewProps={...p,yt,watch,trackMenu:setMenu,openExtract:p.extractAudio&&(()=>setExtracting(true)),playList:(tracks,index,source)=>{
   p.run('music.queue.set',{track_ids:tracks.map(t=>t.id),start_index:index,source});setSheet(tracks[index].id);
  }};
  return <div className={typing?'m-app m-typing':'m-app'}>
@@ -82,6 +86,7 @@ export function MobileApp(p:MobileProps){
   <MiniPlayer p={p} open={()=>p.playing&&setSheet(p.playing.id)}/>
   <GlassTabBar active={root} lastTab={lastTab} onTab={tab} query={query} onQuery={search} onTyping={setTyping} onSubmit={()=>remember(query)}/>
   {sheetTrack&&<NowPlaying track={sheetTrack} status={p.status} queue={p.queue} run={p.run} request={p.request} mode={sheetMode} setMode={setSheetMode} onClose={()=>setSheet(null)} togglePlay={p.togglePlay} seek={p.seek} setVolume={p.setVolume} addToPlaylist={p.addToPlaylist}/>}
+  {watching&&<YouTubePlayer video={watching} onClose={()=>setWatching(null)}/>}
   {extracting&&p.extractAudio&&p.addAudioFile&&<ExtractSheet extract={p.extractAudio} add={p.addAudioFile} onClose={()=>setExtracting(false)}/>}
   {menu&&<TrackMenu track={menu} onClose={()=>setMenu(null)} actions={[
    {icon:<ListStart/>,label:'Play Next',onClick:()=>p.run('music.queue.add',{track_ids:[menu.id],position:'next'})},
@@ -214,12 +219,14 @@ function matchScore(text:string,q:string){
 type Hit<T>={item:T,score:number};
 const ranked=<T,>(items:T[],score:(x:T)=>number)=>items.map(item=>({item,score:score(item)})).filter(h=>h.score>0).sort((a,b)=>b.score-a.score) as Hit<T>[];
 
-type SearchTab='all'|'songs'|'artists'|'albums'|'playlists'|'videos';
+type SearchTab='all'|'songs'|'artists'|'albums'|'playlists'|'videos'|'youtube';
 type Top={kind:'song',track:Track}|{kind:'artist'|'album',name:string,tracks:Track[]}|{kind:'playlist',playlist:Playlist};
 
 function SearchScreen({p,query,st,push}:{p:ViewProps,query:string,st:SearchState,push(s:Screen):void}){
  const [tab,setTab]=useState<SearchTab>('all');
  const trimmed=query.trim(),q=fold(trimmed);
+ // YouTube is searched only once the query is submitted (not while typing): each search costs quota.
+ const ytSearch=useYouTubeSearch(p.yt.settings,trimmed,!st.typing&&!!q);
  useEffect(()=>{if(!q)setTab('all');},[q]);
  const title=<header className="m-header"><div className="m-title-row"><h1>Search</h1></div></header>;
  // Focused with nothing typed: recent searches.
@@ -250,9 +257,10 @@ function SearchScreen({p,query,st,push}:{p:ViewProps,query:string,st:SearchState
   </ul></>;
  }
 
- const counts:Record<SearchTab,number>={all:0,songs:songs.length,artists:artists.length,albums:albums.length,playlists:playlists.length,videos:videos.length};
- if(!songs.length&&!artists.length&&!albums.length&&!playlists.length&&!videos.length)return <>{title}<p className="m-hint">No results for “{trimmed}” in your library{p.yt.channel?' or your YouTube channel':''}.</p></>;
- const tabs=(['all','songs','artists','albums','playlists','videos'] as const).filter(t=>t==='all'||counts[t]>0);
+ const counts:Record<SearchTab,number>={all:0,songs:songs.length,artists:artists.length,albums:albums.length,playlists:playlists.length,videos:videos.length,youtube:ytSearch.results.length};
+ const localNone=!songs.length&&!artists.length&&!albums.length&&!playlists.length&&!videos.length;
+ if(localNone&&ytSearch.status==='off')return <>{title}<p className="m-hint">No results for “{trimmed}” in your library{p.yt.channel?' or your YouTube channel':''}.</p><YouTubeConnect push={push}/></>;
+ const tabs=(['all','songs','artists','albums','playlists','videos','youtube'] as const).filter(t=>t==='all'||counts[t]>0||(t==='youtube'&&ytSearch.status!=='off'));
  const go=(s:Screen)=>{st.remember(trimmed);push(s);};
  const playFrom=(list:Track[],i:number,source:string)=>{st.remember(trimmed);p.playList(list,i,source);};
 
@@ -272,10 +280,12 @@ function SearchScreen({p,query,st,push}:{p:ViewProps,query:string,st:SearchState
 
  return <>{title}
   <div className="m-chips" role="tablist" aria-label="Result type">{tabs.map(t=><button key={t} role="tab" aria-selected={tab===t} className={tab===t?'m-chip on':'m-chip'} onClick={()=>setTab(t)}>
-   {{all:'All',songs:'Songs',artists:'Artists',albums:'Albums',playlists:'Playlists',videos:'Your Videos'}[t]}{t!=='all'&&<small>{counts[t]}</small>}</button>)}</div>
+   {{all:'All',songs:'Songs',artists:'Artists',albums:'Albums',playlists:'Playlists',videos:'Your Videos',youtube:'YouTube'}[t]}{t!=='all'&&(t==='youtube'&&ytSearch.status==='loading'?<span className="m-spinner m-chip-spin" aria-label="Searching"/>:<small>{counts[t]}</small>)}</button>)}</div>
   {tab==='all'&&<>
    {top&&<TopResult top={top} p={p} go={go} playFrom={playFrom} songs={songs}/>}
    {songs.length>0&&<><h2 className="m-section m-section-gap">Songs</h2>{songList(songs.slice(0,5))}{more('songs',songs.length,5)}</>}
+   {ytSearch.status!=='off'&&<><h2 className="m-section m-section-gap">On YouTube</h2><YouTubeSection s={ytSearch} p={p} query={trimmed} limit={4}/>{more('youtube',ytSearch.results.length,4)}</>}
+   {ytSearch.status==='off'&&<YouTubeConnect push={push}/>}
    {artists.length>0&&<><h2 className="m-section m-section-gap">Artists</h2>{artistRows(artists.slice(0,3))}{more('artists',artists.length,3)}</>}
    {albums.length>0&&<><h2 className="m-section m-section-gap">Albums</h2>{albumShelf(albums.slice(0,10))}{more('albums',albums.length,10)}</>}
    {playlists.length>0&&<><h2 className="m-section m-section-gap">Playlists</h2>{playlistRows(playlists.slice(0,3))}{more('playlists',playlists.length,3)}</>}
@@ -286,7 +296,19 @@ function SearchScreen({p,query,st,push}:{p:ViewProps,query:string,st:SearchState
   {tab==='albums'&&albumShelf(albums,true)}
   {tab==='playlists'&&playlistRows(playlists)}
   {tab==='videos'&&<VideoList videos={videos} openExtract={p.openExtract}/>}
+  {tab==='youtube'&&<YouTubeSection s={ytSearch} p={p} query={trimmed}/>}
  </>;
+}
+
+function YouTubeSection({s,p,query,limit}:{s:ReturnType<typeof useYouTubeSearch>,p:ViewProps,query:string,limit?:number}){
+ if(s.status==='loading'||s.status==='idle')return <p className="m-hint m-yt-status"><span className="m-spinner" aria-hidden="true"/>Searching YouTube…</p>;
+ if(s.status==='error')return <div className="m-banner m-error" role="alert">{s.error}</div>;
+ if(!s.results.length)return <p className="m-hint">Nothing on YouTube for “{query}”.</p>;
+ return <YouTubeResultList results={limit?s.results.slice(0,limit):s.results} onWatch={p.watch}/>;
+}
+
+function YouTubeConnect({push}:{push(s:Screen):void}){
+ return <button className="m-yt-connect" onClick={()=>push({name:'youtube'})}><CirclePlay size={22}/><span><b>Search YouTube too</b><small>Add your free YouTube API key in My YouTube Channel to see YouTube results here.</small></span><ChevronRight size={18}/></button>;
 }
 
 /** The big card above the results, with a play button that starts the whole thing. */

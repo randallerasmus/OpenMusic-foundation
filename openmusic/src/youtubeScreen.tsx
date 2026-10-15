@@ -1,6 +1,6 @@
 import React, {useEffect, useState} from 'react';
-import {AudioLines, ExternalLink, RefreshCw, Search} from 'lucide-react';
-import {fetchChannel, parseChannel, saveSettings, studioUrl, type YouTubeChannel, type YouTubeSettings, type YouTubeVideo} from './youtube';
+import {AudioLines, ExternalLink, RefreshCw, Search, X} from 'lucide-react';
+import {embedUrl, fetchChannel, parseChannel, saveSettings, searchYouTube, studioUrl, watchUrl, type YouTubeChannel, type YouTubeResult, type YouTubeSettings, type YouTubeVideo} from './youtube';
 
 /** Shared by the YouTube screen and Search results, owned by MobileApp so both see the same list. */
 export type YouTubeState={
@@ -83,4 +83,47 @@ function Setup({initial,onSave,onCancel}:{initial:YouTubeSettings|null,onSave(s:
    <button type="submit" className="m-primary" disabled={!apiKey.trim()||!validChannel}>Save</button>
   </div>
  </form>;
+}
+
+// ---------- Searching all of YouTube (official API; plays only in YouTube's embedded player) ----------
+
+export type YouTubeSearch={status:'off'|'idle'|'loading'|'done'|'error',results:YouTubeResult[],error:string};
+
+/** Runs a YouTube search for `query` while `enabled` (i.e. once the user has submitted), cached per query. */
+export function useYouTubeSearch(settings:YouTubeSettings|null,query:string,enabled:boolean):YouTubeSearch{
+ const [state,setState]=useState<YouTubeSearch>({status:'idle',results:[],error:''});
+ const q=query.trim();
+ useEffect(()=>{
+  if(!settings){setState({status:'off',results:[],error:''});return;}
+  if(!enabled||!q){setState({status:'idle',results:[],error:''});return;}
+  let live=true;
+  setState({status:'loading',results:[],error:''});
+  // A short pause so a quick tap back into the field doesn't spend quota.
+  const timer=setTimeout(()=>{searchYouTube(settings,q)
+   .then(results=>{if(live)setState({status:'done',results,error:''});})
+   .catch(e=>{if(live)setState({status:'error',results:[],error:e instanceof Error?e.message:String(e)});});},350);
+  return()=>{live=false;clearTimeout(timer);};
+ },[settings?.apiKey,q,enabled]);
+ return state;
+}
+
+export function YouTubeResultList({results,onWatch}:{results:YouTubeResult[],onWatch(v:YouTubeResult):void}){
+ return <ul className="yt-list">{results.map(v=><li key={v.id} className="yt-video">
+  <button className="yt-result" onClick={()=>onWatch(v)} aria-label={`Play ${v.title} on YouTube`}>
+   {v.thumbnail?<img src={v.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer"/>:<span className="yt-thumb-empty"/>}
+   <span className="yt-video-text"><b>{v.title}</b><small>{[v.channel,date(v.publishedAt)].filter(Boolean).join(' · ')}</small></span>
+  </button>
+ </li>)}</ul>;
+}
+
+/** YouTube's own player, unmodified, as the API terms require. Video plays on screen; closing stops it. */
+export function YouTubePlayer({video,onClose}:{video:YouTubeResult,onClose():void}){
+ return <div className="m-sheet-backdrop yt-player-backdrop" onClick={onClose}>
+  <div className="m-glass yt-player" role="dialog" aria-modal="true" aria-label={`YouTube: ${video.title}`} onClick={e=>e.stopPropagation()}>
+   <div className="yt-frame"><iframe src={embedUrl(video.id)} title={video.title} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin"/></div>
+   <div className="yt-player-info"><span className="m-track-text"><b>{video.title}</b><small>{video.channel}</small></span>
+    <button className="m-extract-close" aria-label="Close" onClick={onClose}><X size={18}/></button></div>
+   <a className="yt-action yt-open" href={watchUrl(video.id)} target="_blank" rel="noopener noreferrer"><ExternalLink size={14}/>Open in YouTube</a>
+  </div>
+ </div>;
 }

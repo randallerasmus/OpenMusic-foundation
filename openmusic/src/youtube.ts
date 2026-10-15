@@ -2,9 +2,10 @@
 // Read-only metadata (titles, dates, thumbnails); no media is downloaded. Getting a video file is done by the
 // channel owner in YouTube Studio, which this module only links to.
 //
-// Quota: channels.list and playlistItems.list cost 1 unit per call (of 10,000/day free), so listing even a few
-// hundred uploads costs a handful of units. search.list (100 units) is deliberately not used; titles are
-// filtered locally instead.
+// Quota (10,000 units/day free): channels.list and playlistItems.list cost 1 unit, so listing your uploads is cheap
+// and filtered locally. Searching all of YouTube uses search.list at 100 units a call (~100 searches a day), so
+// it only runs when the user submits a search, and results are cached for the session.
+// Results from search are only ever played in YouTube's own embedded player, as the API terms require.
 
 export type YouTubeSettings={apiKey:string,channel:string};
 export type YouTubeVideo={id:string,title:string,publishedAt:string,thumbnail:string|null};
@@ -85,3 +86,27 @@ export async function fetchChannel(settings:YouTubeSettings):Promise<YouTubeChan
   store(CACHE_KEY,channel);
   return channel;
 }
+
+export type YouTubeResult={id:string,title:string,channel:string,publishedAt:string,thumbnail:string|null};
+type SearchResponse={items?:{id?:{videoId?:string},snippet?:{title?:string,channelTitle?:string,publishedAt?:string,thumbnails?:Record<string,{url?:string}>}}[]};
+
+// The API returns titles HTML-escaped ("Rock &amp; Roll", "Don&#39;t").
+function unescapeHtml(s:string){return new DOMParser().parseFromString(s,'text/html').documentElement.textContent??s;}
+
+const searched=new Map<string,YouTubeResult[]>();
+/** Searches all of YouTube for videos (100 quota units per uncached query). */
+export async function searchYouTube(settings:YouTubeSettings,query:string):Promise<YouTubeResult[]>{
+  const key=query.trim().toLowerCase();
+  const hit=searched.get(key);if(hit)return hit;
+  const body=await call<SearchResponse>('search',{part:'snippet',type:'video',q:query.trim(),maxResults:'15',safeSearch:'moderate'},settings.apiKey);
+  const results=(body.items??[]).flatMap(item=>{
+    const id=item.id?.videoId;if(!id)return [];
+    const t=item.snippet?.thumbnails;
+    return [{id,title:unescapeHtml(item.snippet?.title??''),channel:unescapeHtml(item.snippet?.channelTitle??''),publishedAt:item.snippet?.publishedAt??'',thumbnail:t?.medium?.url??t?.default?.url??null}];
+  });
+  searched.set(key,results);
+  return results;
+}
+
+/** Privacy-enhanced embed (no cookies until the viewer plays). Plays inline on iPhone. */
+export const embedUrl=(id:string)=>`https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1&playsinline=1&rel=0`;

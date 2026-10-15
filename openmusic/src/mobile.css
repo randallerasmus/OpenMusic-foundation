@@ -156,6 +156,19 @@
 .m-top .m-track-text b{font-size:20px;font-weight:700}
 .m-top .m-track-text small{font-size:14px}
 .m-top-play{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--accent);color:#fff}
+.m-chip-spin{width:12px;height:12px;border-width:2px}
+.m-yt-status{display:flex;align-items:center;gap:10px}
+.m-yt-connect{display:flex;align-items:center;gap:12px;width:100%;text-align:left;margin-top:24px;padding:14px;border-radius:14px;background:var(--fill);color:var(--text)}
+.m-yt-connect svg:first-child{color:#e0302a;flex:none}
+.m-yt-connect span{flex:1;display:flex;flex-direction:column;gap:2px}
+.m-yt-connect small{font-size:13px;color:var(--text2)}
+.yt-result{display:flex;gap:12px;width:100%;text-align:left}
+.yt-player{width:100%;border-radius:20px;overflow:hidden;background:var(--bg);padding-bottom:14px}
+.yt-frame{position:relative;aspect-ratio:16/9;background:#000}
+.yt-frame iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.yt-player-info{display:flex;align-items:center;gap:12px;padding:12px 14px 8px}
+.yt-player-info b{font-size:16px}
+.yt-open{margin-left:14px}
 .m-see-all{color:var(--accent);font-weight:600;font-size:15px;padding:10px 0 0}
 
 /* Song action sheet */
