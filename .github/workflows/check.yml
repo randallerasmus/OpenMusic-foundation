@@ -1,5 +1,9 @@
 name: Build and test
+# Lives at the repository root because GitHub only runs workflows from /.github; the app is in openmusic/.
 on: [push, pull_request]
+defaults:
+  run:
+    working-directory: openmusic
 jobs:
   rust:
     runs-on: ubuntu-latest
@@ -7,6 +11,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf
       - uses: dtolnay/rust-toolchain@stable
+      # Tauri's build script requires frontendDist (../dist) to exist; the tests don't need its contents.
+      - run: mkdir -p dist
       - run: cargo test --workspace
   frontend:
     runs-on: ubuntu-latest

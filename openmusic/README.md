@@ -51,7 +51,9 @@ npm run build
 npx vite preview --port 4173   # open http://localhost:4173
 ```
 
-Deploy: upload `dist/` to any static HTTPS host (Cloudflare Pages and Netlify read `public/_headers`, which keeps `sw.js` revalidating so updates reach installed apps), then point the `music` DNS record at it. On the phone, open the site and use **Add to Home Screen** (Safari share menu on iPhone; Chrome menu → Install app on Android).
+Ship (commit + push + deploy in one step): `npm run ship -- "What changed"`. It builds first and stops on errors, commits every change, and pushes the current branch. Pushing `master` runs `.github/workflows/deploy.yml`, which builds the site and uploads it to music.khoi-san.co.za over FTPS (via SamKirkland/FTP-Deploy-Action, used only in CI), then checks the live site serves the new build. One-time setup: add the repository secrets `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD` and `FTP_SERVER_DIR` (the site's folder, ending in `/`) under GitHub → Settings → Secrets and variables → Actions; set the variable `FTP_PROTOCOL` to `ftp` only if the host has no TLS.
+
+Manual deploy: upload `dist/` to any static HTTPS host (Cloudflare Pages and Netlify read `public/_headers`, which keeps `sw.js` revalidating so updates reach installed apps), then point the `music` DNS record at it. On the phone, open the site and use **Add to Home Screen** (Safari share menu on iPhone; Chrome menu → Install app on Android).
 
 Web limitations: no folder scanning (pick files instead); no track removal yet; codec support is the browser's (MP3 and M4A/AAC everywhere, FLAC on modern browsers, OGG/ALAC vary); iOS background playback for home-screen web apps is less reliable than native; browsers may evict storage under pressure (the app requests persistent storage, which may be denied).
 

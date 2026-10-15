@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --port 1420",
     "build": "tsc --noEmit && vite build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "ship": "node scripts/ship.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

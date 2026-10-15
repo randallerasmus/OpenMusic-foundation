@@ -1,0 +1,58 @@
+name: Deploy web app
+# Every push to master builds the web app and uploads it to music.khoi-san.co.za over FTP.
+# Needs these repository secrets (Settings → Secrets and variables → Actions):
+#   FTP_SERVER      FTP host name, e.g. ftp.khoi-san.co.za
+#   FTP_USERNAME    FTP account user
+#   FTP_PASSWORD    FTP account password
+#   FTP_SERVER_DIR  folder the site is served from, ending in /, e.g. /public_html/music/
+# Optional repository variable FTP_PROTOCOL: ftps (default) or ftp if the host has no TLS.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: openmusic
+    steps:
+      - name: Check FTP secrets are set
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
+        working-directory: .
+        run: |
+          missing=""
+          for name in FTP_SERVER FTP_USERNAME FTP_PASSWORD FTP_SERVER_DIR; do [ -n "${!name}" ] || missing="$missing $name"; done
+          if [ -n "$missing" ]; then echo "::error::Add these repository secrets before deploying:$missing"; exit 1; fi
+          case "$FTP_SERVER_DIR" in */) ;; *) echo "::error::FTP_SERVER_DIR must end with /"; exit 1;; esac
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: npm install
+      - run: npm run build
+      # Uploads only files that changed since the last deploy (it keeps a small sync-state file on the server).
+      # Includes .htaccess, which keeps sw.js and index.html revalidating so installed apps update.
+      - uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          protocol: ${{ vars.FTP_PROTOCOL || 'ftps' }}
+          local-dir: ./openmusic/dist/
+      - name: Check the live site serves this build
+        run: |
+          expected=$(grep -o 'assets/index-[^"]*\.js' dist/index.html)
+          for i in 1 2 3 4 5 6; do
+            live=$(curl -fsS -H 'Cache-Control: no-cache' https://music.khoi-san.co.za/ | grep -o 'assets/index-[^"]*\.js' || true)
+            [ "$live" = "$expected" ] && { echo "Live site serves $expected"; exit 0; }
+            sleep 10
+          done
+          echo "::error::Live site serves '$live', expected '$expected'. Check FTP_SERVER_DIR points at the site's folder."; exit 1

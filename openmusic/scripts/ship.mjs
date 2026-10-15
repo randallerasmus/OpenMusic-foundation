@@ -1,0 +1,30 @@
+// npm run ship -- "commit message"
+// Builds the web app (stopping on errors), commits every change in the repository, and pushes.
+// A push to master triggers .github/workflows/deploy.yml, which uploads the site; other branches only push.
+import {execFileSync} from 'node:child_process';
+
+const message=process.argv.slice(2).join(' ').trim();
+const run=(cmd,args,opts={})=>execFileSync(cmd,args,{stdio:'inherit',...opts});
+const out=(cmd,args)=>execFileSync(cmd,args,{encoding:'utf8'}).trim();
+
+const root=out('git',['rev-parse','--show-toplevel']);
+const branch=out('git',['branch','--show-current']);
+if(!branch){console.error('Not on a branch (detached HEAD); check out master first.');process.exit(1);}
+
+console.log('› Building to check nothing is broken…');
+run('npm',['run','build']);
+
+const changes=out('git',['-C',root,'status','--porcelain']);
+if(changes){
+  if(!message){console.error('There are changes to commit: add a message, e.g. npm run ship -- "Fix lyrics scrolling"');process.exit(1);}
+  console.log(`› Committing on ${branch}:\n${changes}`);
+  run('git',['-C',root,'add','-A']);
+  run('git',['-C',root,'commit','-m',message]);
+}else console.log('› Nothing new to commit.');
+
+console.log(`› Pushing ${branch}…`);
+run('git',['-C',root,'push','-u','origin',branch]);
+
+const remote=out('git',['-C',root,'remote','get-url','origin']).replace(/\.git$/,'').replace(/^git@github\.com:/,'https://github.com/');
+if(branch==='master')console.log(`✓ Pushed. Deploying to https://music.khoi-san.co.za: follow it at ${remote}/actions`);
+else console.log(`✓ Pushed ${branch}. Only master deploys; merge it into master to go live.`);
