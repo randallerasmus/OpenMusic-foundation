@@ -22,6 +22,15 @@ if(changes){
   run('git',['-C',root,'commit','-m',message]);
 }else console.log('› Nothing new to commit.');
 
+// Bring in anything pushed from elsewhere (e.g. a pull request merged on GitHub) so the push isn't rejected.
+// A rebase that conflicts is aborted, leaving everything as it was for a person to sort out.
+const upstream=out('git',['-C',root,'ls-remote','--heads','origin',branch]);
+if(upstream){
+  console.log(`› Updating from origin/${branch}…`);
+  run('git',['-C',root,'fetch','origin',branch]);
+  try{run('git',['-C',root,'rebase',`origin/${branch}`]);}
+  catch{try{run('git',['-C',root,'rebase','--abort']);}catch{} console.error(`✗ Your commits conflict with changes on GitHub's ${branch}. Nothing was pushed; resolve the conflict, then ship again.`);process.exit(1);}
+}
 console.log(`› Pushing ${branch}…`);
 // --follow-tags also sends annotated tags on these commits (e.g. a build-N tag made locally).
 run('git',['-C',root,'push','--follow-tags','-u','origin',branch]);
