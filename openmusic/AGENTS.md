@@ -11,4 +11,5 @@
 9. Update `FEATURE_PARITY.md` with honest statuses and evidence on every feature change.
 10. Prefer incremental commits and preserve on-disk schema and CLI compatibility.
 11. No DRM circumvention, unauthorized content APIs, Apple trademarks, or copying proprietary interface artwork.
+    Exception (owner decision, 2026-10-16): lyrics may be looked up on LRCLIB (lrclib.net), a community lyrics database whose lyrics are not publisher-licensed. The site owner accepts that copyright risk. Lookups must stay per-song and on demand, send only the song's title/artist, and credit LRCLIB wherever its lyrics are shown. No other unlicensed content source is allowed without a new owner decision recorded here.
 12. Explicitly mark unavailable features as unavailable in the UI, not working.

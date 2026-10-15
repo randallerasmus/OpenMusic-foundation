@@ -1,18 +1,27 @@
 name: Deploy web app
-# Every push to master builds the web app and uploads it to music.khoi-san.co.za over FTP.
-# Needs these repository secrets (Settings → Secrets and variables → Actions):
-#   FTP_SERVER      FTP host name, e.g. ftp.khoi-san.co.za
-#   FTP_USERNAME    FTP account user
-#   FTP_PASSWORD    FTP account password
-#   FTP_SERVER_DIR  folder the site is served from, ending in /, e.g. /public_html/music/
+# Pushing master builds the web app, uploads it to music.khoi-san.co.za over FTPS, and records it as a numbered
+# build: a git tag `build-N` plus a GitHub Release, so the Releases page lists everything that went live.
+#
+# Roll back: Actions → Deploy web app → Run workflow → "Version to deploy" = build-N (see Releases) → Run.
+# The site then serves exactly that build again; no new release is created for a rollback.
+#
+# Needs repository secrets (Settings → Secrets and variables → Actions):
+#   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_SERVER_DIR (the site's folder as the FTP account sees it, ending in /)
 # Optional repository variable FTP_PROTOCOL: ftps (default) or ftp if the host has no TLS.
 on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Version to deploy: a build tag like build-14 to roll back, or a branch/commit. Empty = latest master.'
+        required: false
+        default: ''
 concurrency:
   group: deploy-web
   cancel-in-progress: false
+permissions:
+  contents: write   # to tag the build and create its release
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -33,12 +42,29 @@ jobs:
           if [ -n "$missing" ]; then echo "::error::Add these repository secrets before deploying:$missing"; exit 1; fi
           case "$FTP_SERVER_DIR" in */) ;; *) echo "::error::FTP_SERVER_DIR must end with /"; exit 1;; esac
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: Work out the build number
+        id: build
+        env:
+          REF: ${{ inputs.ref || github.ref_name }}
+        run: |
+          # Redeploying an existing build keeps its number; anything else is a new build numbered by this run.
+          if [[ "$REF" =~ ^build-([0-9]+)$ ]]; then echo "number=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"; echo "rollback=true" >> "$GITHUB_OUTPUT"
+          else echo "number=${{ github.run_number }}" >> "$GITHUB_OUTPUT"; echo "rollback=false" >> "$GITHUB_OUTPUT"; fi
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with: {node-version: '22'}
       - run: npm install
       - run: npm run build
+        env:
+          OPENMUSIC_BUILD: ${{ steps.build.outputs.number }}
+          OPENMUSIC_COMMIT: ${{ steps.build.outputs.commit }}
+          OPENMUSIC_REF: ${{ steps.build.outputs.ref }}
       # Uploads only files that changed since the last deploy (it keeps a small sync-state file on the server).
-      # Includes .htaccess, which keeps sw.js and index.html revalidating so installed apps update.
+      # Includes .htaccess, which keeps sw.js, index.html and version.json revalidating so installed apps update.
       - uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -48,11 +74,37 @@ jobs:
           protocol: ${{ vars.FTP_PROTOCOL || 'ftps' }}
           local-dir: ./openmusic/dist/
       - name: Check the live site serves this build
+        env:
+          COMMIT: ${{ steps.build.outputs.commit }}
         run: |
-          expected=$(grep -o 'assets/index-[^"]*\.js' dist/index.html)
+          # Builds from before version.json existed are checked by their main bundle's file name instead.
           for i in 1 2 3 4 5 6; do
-            live=$(curl -fsS -H 'Cache-Control: no-cache' https://music.khoi-san.co.za/ | grep -o 'assets/index-[^"]*\.js' || true)
-            [ "$live" = "$expected" ] && { echo "Live site serves $expected"; exit 0; }
+            if [ -f dist/version.json ]; then
+              live=$(curl -fsS -H 'Cache-Control: no-cache' "https://music.khoi-san.co.za/version.json?t=$(date +%s)" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).commit)}catch{console.log("")}})' || true)
+              [ "$live" = "$COMMIT" ] && { echo "Live site serves commit $COMMIT"; exit 0; }
+            else
+              expected=$(grep -o 'assets/index-[^"]*\.js' dist/index.html)
+              live=$(curl -fsS -H 'Cache-Control: no-cache' https://music.khoi-san.co.za/ | grep -o 'assets/index-[^"]*\.js' || true)
+              [ "$live" = "$expected" ] && { echo "Live site serves $expected"; exit 0; }
+            fi
             sleep 10
           done
-          echo "::error::Live site serves '$live', expected '$expected'. Check FTP_SERVER_DIR points at the site's folder."; exit 1
+          echo "::error::The live site isn't serving this build yet (saw '$live'). Check FTP_SERVER_DIR points at the site's folder."; exit 1
+      - name: Record the build (tag + release)
+        if: steps.build.outputs.rollback == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          N: ${{ steps.build.outputs.number }}
+          V: ${{ steps.build.outputs.version }}
+          COMMIT: ${{ steps.build.outputs.commit }}
+        # Release notes list what changed since the previous build's release.
+        run: gh release create "build-$N" --repo "$GITHUB_REPOSITORY" --target "$COMMIT" --title "Build $N · v$V" --generate-notes
+      - name: Summary
+        env:
+          N: ${{ steps.build.outputs.number }}
+          V: ${{ steps.build.outputs.version }}
+          COMMIT: ${{ steps.build.outputs.commit }}
+          ROLLBACK: ${{ steps.build.outputs.rollback }}
+        run: |
+          if [ "$ROLLBACK" = true ]; then echo "### Rolled back: music.khoi-san.co.za now serves build $N (v$V, ${COMMIT:0:7})" >> "$GITHUB_STEP_SUMMARY"
+          else echo "### Deployed build $N (v$V, ${COMMIT:0:7}) to music.khoi-san.co.za" >> "$GITHUB_STEP_SUMMARY"; fi

@@ -3,7 +3,7 @@ AddType application/manifest+json .webmanifest
 
 # The service worker and app shell must revalidate so new deployments reach installed apps.
 <IfModule mod_headers.c>
-  <FilesMatch "^(sw\.js|index\.html|manifest\.webmanifest)$">
+  <FilesMatch "^(sw\.js|index\.html|manifest\.webmanifest|version\.json)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
   <If "%{REQUEST_URI} =~ m#^/assets/#">

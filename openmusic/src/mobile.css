@@ -126,6 +126,7 @@
 .m-error{background:#fde3e6;color:#8a1426}.m-notice{background:#def3e4;color:#1d5a2f}
 @media(prefers-color-scheme:dark){.m-error{background:#502733;color:#ffe6e8}.m-notice{background:#24322c;color:#bfe3c7}}
 .m-hint{color:var(--text2);font-size:15px}
+.m-version{text-align:center;font-size:12px;color:var(--text2);margin:28px 0 0;font-variant-numeric:tabular-nums}
 .m-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:28px 12px}
 .m-empty .m-art{width:96px;border-radius:22px}
 .m-empty h2{font-size:20px;margin:18px 0 6px}.m-empty p{color:var(--text2);font-size:15px;margin:0 0 18px}
@@ -228,6 +229,27 @@
 .np-lyrics-editor textarea{flex:1;min-height:0;resize:none;border:0;outline:0;border-radius:14px;padding:14px;background:rgba(0,0,0,.22);color:#fff;font:inherit;font-size:16px;line-height:1.45}
 .np-lyrics-editor textarea::placeholder{color:rgba(255,255,255,.55)}
 .np-lyrics-editor textarea:focus-visible{box-shadow:0 0 0 2px rgba(255,255,255,.8)}
+.np-lyrics-actions a{color:#fff;font-weight:600}
+.np-spinner{width:26px;height:26px;border-radius:50%;border:3px solid rgba(255,255,255,.25);border-top-color:#fff;animation:m-spin .8s linear infinite}
+.np-lyrics-buttons{display:flex;align-items:center;gap:18px;font-weight:600}
+/* Find lyrics: search box + LRCLIB results */
+.np-lyrics-search{padding-bottom:16px;-webkit-mask-image:none;mask-image:none}
+.np-lyrics-search h2{font-size:20px;margin:4px 0 4px}
+.np-lyrics-search>p{font-size:14px;line-height:1.4;color:var(--np-dim);margin:0 0 12px}
+.np-search{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.22);border-radius:12px;padding:0 6px 0 12px;height:44px;color:var(--np-dim)}
+.np-search input{flex:1;min-width:0;height:100%;border:0;outline:0;background:none;color:#fff;font:inherit;font-size:16px}
+.np-search input::placeholder{color:rgba(255,255,255,.55)}
+.np-search input::-webkit-search-cancel-button{display:none}
+.np-search button{font-weight:600;color:#fff;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.18)}
+.np-search button:disabled{opacity:.4}
+.np-results{list-style:none;margin:10px 0 0;padding:0}
+.np-results button{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:10px;width:100%;text-align:left;padding:11px 0;border-bottom:.5px solid rgba(255,255,255,.2)}
+.np-results b{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.np-results small{grid-row:2;font-size:13px;color:var(--np-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.np-badge{grid-row:1/3;grid-column:2;align-self:center;font-size:11px;font-weight:700;letter-spacing:.3px;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.18);color:var(--np-dim)}
+.np-badge.synced{background:rgba(255,255,255,.92);color:hsl(var(--hue) 30% 28%)}
+.np-manual{margin-top:14px;font-weight:600;color:#fff;text-decoration:underline;text-underline-offset:3px}
+.np-lyrics-note a{color:#fff}
 .np-editor-buttons{display:flex;justify-content:flex-end;align-items:center;gap:18px;font-weight:600}
 .np-bar{-webkit-appearance:none;appearance:none;width:100%;height:24px;margin:0;background:none;cursor:pointer}
 .np-bar::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,rgba(255,255,255,.9) var(--pct),rgba(255,255,255,.25) var(--pct));transition:height .15s}

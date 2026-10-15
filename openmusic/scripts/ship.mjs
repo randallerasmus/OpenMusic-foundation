@@ -23,8 +23,9 @@ if(changes){
 }else console.log('› Nothing new to commit.');
 
 console.log(`› Pushing ${branch}…`);
-run('git',['-C',root,'push','-u','origin',branch]);
+// --follow-tags also sends annotated tags on these commits (e.g. a build-N tag made locally).
+run('git',['-C',root,'push','--follow-tags','-u','origin',branch]);
 
 const remote=out('git',['-C',root,'remote','get-url','origin']).replace(/\.git$/,'').replace(/^git@github\.com:/,'https://github.com/');
-if(branch==='master')console.log(`✓ Pushed. Deploying to https://music.khoi-san.co.za: follow it at ${remote}/actions`);
+if(branch==='master')console.log(`✓ Pushed. Deploying to https://music.khoi-san.co.za: follow it at ${remote}/actions\n  Deploy history: ${remote}/releases · live version: https://music.khoi-san.co.za/version.json`);
 else console.log(`✓ Pushed ${branch}. Only master deploys; merge it into master to go live.`);

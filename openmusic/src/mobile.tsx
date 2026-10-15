@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useState, useSyncExternalStore} from 'react';
 import type {ExtractedAudio, ImportResult, Playback, Playlist, QueueView, Track} from './backend';
 import {ExtractSheet} from './extractSheet';
+import {buildLabel} from './buildInfo';
 import {getCachedChannel, getSettings} from './youtube';
 import {useYouTube, VideoList, YouTubeScreen, type YouTubeState} from './youtubeScreen';
 import {AudioLines, ChevronLeft, CirclePlay, ChevronRight, Clock, Disc3, Ellipsis, FolderPlus, House, Library, ListEnd, ListMusic, ListPlus, ListStart, Mic2, Music2, Pause, Play, Plus, Search, SkipForward, X} from 'lucide-react';
@@ -111,7 +112,8 @@ function ScreenView({p,screen,query,push,back}:{p:ViewProps,screen:Screen,query:
      {icon:<Disc3/>,label:'Albums',onClick:()=>push({name:'albums'})},
      {icon:<Music2/>,label:'Songs',onClick:()=>push({name:'songs'})},
     ]}/>
-    {empty}</>;
+    {empty}
+    <p className="m-version">OpenMusic {buildLabel}</p></>;
   }
   case 'playlists':
    return <>{header()}<NavList rows={[

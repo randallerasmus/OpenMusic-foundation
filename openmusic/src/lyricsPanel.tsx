@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import type {Lyrics, Playback, Track} from './backend';
-import {MessageSquareQuote} from 'lucide-react';
+import type {LrclibCandidate, LrclibLookup} from './lrclib';
+import {Search} from 'lucide-react';
 
 type Request=<T>(name:string,args?:Record<string,unknown>)=>Promise<T>;
 type Props={track:Track,status:Playback,request:Request,seek(seconds:number):void};
@@ -9,47 +10,105 @@ type Props={track:Track,status:Playback,request:Request,seek(seconds:number):voi
 const LEAD_MS=150;
 // After the user scrolls the lyrics themselves, stop following playback for a while.
 const MANUAL_SCROLL_MS=4000;
+// Lookups already made this session, so reopening the view doesn't hit LRCLIB again for the same song.
+const looked=new Map<number,LrclibLookup>();
 
-/** Lyrics for the Now Playing sheet: follows playback for timed (LRC) lyrics, tap a line to jump there. */
+type View={kind:'loading'}|{kind:'lyrics',lyrics:Lyrics}|{kind:'searching'}|{kind:'results',lookup:LrclibLookup}
+ |{kind:'failed',message:string}|{kind:'editing',initial:string};
+
+const clock=(s:number|null)=>s==null?'':`${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+
+/**
+ * Lyrics for the Now Playing sheet. Saved or .lrc lyrics show straight away; otherwise LRCLIB is searched
+ * automatically and a confident match is saved. Timed lyrics follow playback; tap a line to jump there.
+ */
 export function LyricsPanel({track,status,request,seek}:Props){
- const [lyrics,setLyrics]=useState<Lyrics|null|undefined>(undefined);
- const [editing,setEditing]=useState(false);
+ const [view,setView]=useState<View>({kind:'loading'});
  const [error,setError]=useState('');
+ const duration=status.track_id===track.id?status.duration_seconds:null;
+ const fail=(e:unknown)=>e instanceof Error?e.message:String(e);
+
+ async function search(query:string|null,auto:boolean){
+  setView({kind:'searching'});setError('');
+  try{
+   const lookup=await request<LrclibLookup>('music.lyrics.lookup',{track_id:track.id,query,duration_seconds:duration});
+   looked.set(track.id,lookup);
+   if(auto&&lookup.confident)await choose(lookup.candidates[0]);
+   else setView({kind:'results',lookup});
+  }catch(e){setView({kind:'failed',message:fail(e)});}
+ }
+ async function choose(c:LrclibCandidate){
+  try{setView({kind:'lyrics',lyrics:await request<Lyrics>('music.lyrics.set',{track_id:track.id,text:c.lyrics,source:'lrclib'})});}
+  catch(e){setView({kind:'failed',message:fail(e)});}
+ }
  useEffect(()=>{
-  let live=true;setLyrics(undefined);setEditing(false);setError('');
-  request<Lyrics|null>('music.lyrics.get',{track_id:track.id}).then(l=>{if(live)setLyrics(l);}).catch(e=>{if(live){setLyrics(null);setError(String(e instanceof Error?e.message:e));}});
+  let live=true;setView({kind:'loading'});setError('');
+  request<Lyrics|null>('music.lyrics.get',{track_id:track.id}).then(l=>{
+   if(!live)return;
+   if(l)setView({kind:'lyrics',lyrics:l});
+   else{const prev=looked.get(track.id);if(prev)setView({kind:'results',lookup:prev});else void search(null,true);}
+  }).catch(e=>{if(live)setView({kind:'failed',message:fail(e)});});
   return()=>{live=false};
  },[track.id]);
 
  async function save(text:string){
-  try{setError('');setLyrics(await request<Lyrics>('music.lyrics.set',{track_id:track.id,text}));setEditing(false);}
-  catch(e){setError(e instanceof Error?e.message:String(e));}
+  try{setError('');setView({kind:'lyrics',lyrics:await request<Lyrics>('music.lyrics.set',{track_id:track.id,text})});}
+  catch(e){setError(fail(e));}
  }
  async function remove(){
-  try{setError('');await request('music.lyrics.clear',{track_id:track.id});setLyrics(await request<Lyrics|null>('music.lyrics.get',{track_id:track.id}));}
-  catch(e){setError(e instanceof Error?e.message:String(e));}
+  try{
+   setError('');await request('music.lyrics.clear',{track_id:track.id});
+   const l=await request<Lyrics|null>('music.lyrics.get',{track_id:track.id});
+   // After removing, don't immediately fetch the same lyrics again: offer search instead.
+   setView(l?{kind:'lyrics',lyrics:l}:{kind:'results',lookup:{candidates:[],confident:false,query:''}});
+  }catch(e){setError(fail(e));}
  }
+ const manual=(initial='')=>setView({kind:'editing',initial});
 
- if(editing)return <LyricsEditor initial={lyrics?.source==='saved'?lyrics.text:''} error={error} onSave={save} onCancel={()=>{setEditing(false);setError('');}}/>;
- if(lyrics===undefined)return <section className="np-lyrics np-lyrics-empty"><p>Loading lyrics…</p></section>;
- if(lyrics===null)return <section className="np-lyrics np-lyrics-empty">
-  <MessageSquareQuote size={34}/>
-  <h2>No lyrics for this song</h2>
-  <p>Paste lyrics, or import a <b>.lrc</b> file with the same name as the song (for example <i>{track.title}.lrc</i>) to get lyrics that follow along.</p>
-  {error&&<p className="np-lyrics-error" role="alert">{error}</p>}
-  <button className="np-pill" onClick={()=>setEditing(true)}>Add Lyrics</button>
+ switch(view.kind){
+  case 'loading':return <section className="np-lyrics np-lyrics-empty"><p>Loading lyrics…</p></section>;
+  case 'searching':return <section className="np-lyrics np-lyrics-empty" role="status"><span className="np-spinner" aria-hidden="true"/><p>Searching for lyrics…</p></section>;
+  case 'editing':return <LyricsEditor initial={view.initial} error={error} onSave={save} onCancel={()=>{setError('');setView({kind:'loading'});void request<Lyrics|null>('music.lyrics.get',{track_id:track.id}).then(l=>setView(l?{kind:'lyrics',lyrics:l}:{kind:'results',lookup:looked.get(track.id)??{candidates:[],confident:false,query:''}}));}}/>;
+  case 'failed':return <LyricsSearch track={track} lookup={looked.get(track.id)??{candidates:[],confident:false,query:''}} error={view.message} onSearch={q=>void search(q,false)} onPick={c=>void choose(c)} onManual={()=>manual()}/>;
+  case 'results':return <LyricsSearch track={track} lookup={view.lookup} onSearch={q=>void search(q,false)} onPick={c=>void choose(c)} onManual={()=>manual()}/>;
+  case 'lyrics':{
+   const lyrics=view.lyrics;
+   return <>
+    {lyrics.synced?<SyncedLyrics lyrics={lyrics} status={status} seek={seek}/>:
+     <section className="np-lyrics" aria-label="Lyrics">{lyrics.lines.map((l,i)=><p key={i} className="np-line plain">{l.text||'\u00a0'}</p>)}
+      <p className="np-lyrics-note">These lyrics aren't time-synced.</p></section>}
+    <div className="np-lyrics-actions">
+     {lyrics.source==='lrclib'
+      ?<span>Lyrics from <a href="https://lrclib.net" target="_blank" rel="noopener noreferrer">LRCLIB</a></span>
+      :<span>{lyrics.source==='file'?'From a .lrc file next to the song':'Saved in your library'}</span>}
+     {lyrics.source==='lrclib'?<button onClick={()=>void search(null,false)}>Wrong lyrics?</button>
+      :<button onClick={()=>manual(lyrics.source==='saved'?lyrics.text:'')}>{lyrics.source==='file'?'Replace':'Edit'}</button>}
+     {lyrics.source!=='file'&&<button onClick={()=>void remove()}>Remove</button>}
+    </div>
+    {error&&<p className="np-lyrics-error" role="alert">{error}</p>}
+   </>;
+  }
+ }
+}
+
+/** Search box plus LRCLIB results: shown when no sure match was found, or when the user asks to search again. */
+function LyricsSearch({track,lookup,error,onSearch,onPick,onManual}:{track:Track,lookup:LrclibLookup,error?:string,onSearch(q:string):void,onPick(c:LrclibCandidate):void,onManual():void}){
+ const [query,setQuery]=useState(lookup.query||track.title);
+ const none=lookup.candidates.length===0;
+ return <section className="np-lyrics np-lyrics-search" aria-label="Find lyrics">
+  <h2>{error?'Couldn\'t search for lyrics':none?(lookup.query?'No lyrics found':'Find lyrics'):'Pick the right lyrics'}</h2>
+  {error?<p className="np-lyrics-error" role="alert">{error} You can search again below.</p>:<p>{none?(lookup.query?<>Nothing on LRCLIB for “{lookup.query}”. Try the song's exact title, maybe with the artist.</>:'Search LRCLIB by title and artist.'):'These might match. Timed lyrics follow along as the song plays.'}</p>}
+  <form className="np-search" role="search" onSubmit={e=>{e.preventDefault();if(query.trim())onSearch(query.trim());}}>
+   <Search size={17}/><input type="search" enterKeyHint="search" value={query} onChange={e=>setQuery(e.target.value)} aria-label="Search lyrics by title and artist" placeholder="Title and artist"/>
+   <button type="submit" disabled={!query.trim()}>Search</button>
+  </form>
+  <ul className="np-results">{lookup.candidates.map(c=><li key={c.id}><button onClick={()=>onPick(c)}>
+   <b>{c.track}</b><small>{[c.artist,clock(c.duration_seconds)].filter(Boolean).join(' · ')}</small>
+   <span className={c.synced?'np-badge synced':'np-badge'}>{c.synced?'Timed':'Plain'}</span>
+  </button></li>)}</ul>
+  <button className="np-manual" onClick={onManual}>Type or paste lyrics yourself</button>
+  <p className="np-lyrics-note">Search results come from <a href="https://lrclib.net" target="_blank" rel="noopener noreferrer">LRCLIB</a>, a community lyrics database. Only the search text is sent.</p>
  </section>;
- return <>
-  {lyrics.synced?<SyncedLyrics lyrics={lyrics} status={status} seek={seek}/>:
-   <section className="np-lyrics" aria-label="Lyrics">{lyrics.lines.map((l,i)=><p key={i} className="np-line plain">{l.text||' '}</p>)}
-    <p className="np-lyrics-note">These lyrics aren't time-synced.</p></section>}
-  <div className="np-lyrics-actions">
-   <span>{lyrics.source==='file'?'From a .lrc file next to the song':'Saved in your library'}</span>
-   <button onClick={()=>setEditing(true)}>{lyrics.source==='file'?'Replace':'Edit'}</button>
-   {lyrics.source==='saved'&&<button onClick={()=>void remove()}>Remove</button>}
-  </div>
-  {error&&<p className="np-lyrics-error" role="alert">{error}</p>}
- </>;
 }
 
 /** Status arrives every ~500 ms; between polls the position is extrapolated so lines change on time. */

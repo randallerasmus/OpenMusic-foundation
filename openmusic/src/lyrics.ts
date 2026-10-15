@@ -1,7 +1,7 @@
 // Browser port of crates/openmusic-core/src/lyrics.rs, used by webBackend.ts. Keep the two in step.
 
 export type LyricLine={time_ms:number|null,text:string};
-export type Lyrics={text:string,synced:boolean,lines:LyricLine[],source:'saved'|'file'};
+export type Lyrics={text:string,synced:boolean,lines:LyricLine[],source:'saved'|'lrclib'|'file'};
 
 export const MAX_LYRICS_BYTES=256*1024;
 

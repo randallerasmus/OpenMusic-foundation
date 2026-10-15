@@ -6,6 +6,7 @@ use std::{fs::File, io::BufReader, path::{Path, PathBuf}, sync::{atomic::{Atomic
 use thiserror::Error;
 use walkdir::WalkDir;
 
+pub mod lrclib;
 pub mod lyrics;
 pub mod queue;
 use lyrics::{Lyrics, MAX_LYRICS_BYTES};
@@ -17,6 +18,7 @@ pub enum MusicError {
     #[error("I/O: {0}")] Io(#[from] std::io::Error),
     #[error("Playback: {0}")] Playback(String),
     #[error("Invalid request: {0}")] Request(String),
+    #[error("{0}")] Network(String),
 }
 pub type Result<T> = std::result::Result<T, MusicError>;
 
@@ -155,6 +157,9 @@ impl MusicApp {
           CREATE INDEX IF NOT EXISTS idx_playlist_order ON playlist_tracks(playlist_id, position);
           CREATE TABLE IF NOT EXISTS queue_state (id INTEGER PRIMARY KEY CHECK (id = 1), state TEXT NOT NULL);
           CREATE TABLE IF NOT EXISTS lyrics (track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE, text TEXT NOT NULL);")?;
+        // Added after the lyrics table first shipped: where saved lyrics came from ("saved" = typed/imported, "lrclib").
+        let has_source: bool = conn.prepare("SELECT 1 FROM pragma_table_info('lyrics') WHERE name='source'")?.exists([])?;
+        if !has_source { conn.execute_batch("ALTER TABLE lyrics ADD COLUMN source TEXT NOT NULL DEFAULT 'saved';")?; }
         let mut queue = Queue::default();
         let saved: Option<String> = conn.query_row("SELECT state FROM queue_state WHERE id=1", [], |r| r.get(0)).ok();
         // A saved queue that no longer parses is dropped rather than blocking startup.
@@ -190,8 +195,8 @@ impl MusicApp {
     /// Saved lyrics win; otherwise a `.lrc` with the same name beside the audio file. None when neither exists.
     fn lyrics(&self, track_id: i64) -> Result<Option<Lyrics>> {
         let track = self.track_by_id(track_id)?;
-        let saved: Option<String> = self.db()?.query_row("SELECT text FROM lyrics WHERE track_id=?1", [track_id], |r| r.get(0)).ok();
-        if let Some(text) = saved { return Ok(Some(Lyrics::new(text, "saved"))); }
+        let saved: Option<(String, String)> = self.db()?.query_row("SELECT text, source FROM lyrics WHERE track_id=?1", [track_id], |r| Ok((r.get(0)?, r.get(1)?))).ok();
+        if let Some((text, source)) = saved { return Ok(Some(Lyrics::new(text, if source == "lrclib" { "lrclib" } else { "saved" }))); }
         let sidecar = Path::new(&track.path).with_extension("lrc");
         match std::fs::metadata(&sidecar) {
             Ok(meta) if meta.is_file() => {
@@ -318,9 +323,19 @@ impl MusicApp {
                 let id = arg_i64(&args,"track_id")?;
                 let text = arg_str(&args,"text")?.trim();
                 if text.len() > MAX_LYRICS_BYTES { return Err(MusicError::Request(format!("Lyrics must be under {} KB", MAX_LYRICS_BYTES / 1024))); }
+                let source = match args.get("source").and_then(Value::as_str) { None | Some("saved") => "saved", Some("lrclib") => "lrclib",
+                    Some(other) => return Err(MusicError::Request(format!("source must be \"saved\" or \"lrclib\", not {other:?}"))) };
                 self.track_by_id(id)?;
-                self.db()?.execute("INSERT INTO lyrics(track_id,text) VALUES(?1,?2) ON CONFLICT(track_id) DO UPDATE SET text=excluded.text", params![id, text])?;
-                Ok(json!(Lyrics::new(text.to_owned(), "saved")))
+                self.db()?.execute("INSERT INTO lyrics(track_id,text,source) VALUES(?1,?2,?3) ON CONFLICT(track_id) DO UPDATE SET text=excluded.text, source=excluded.source", params![id, text, source])?;
+                Ok(json!(Lyrics::new(text.to_owned(), source)))
+            }
+            // Searches LRCLIB for this song (or `query`); returns ranked candidates and whether the best is a sure match.
+            // Nothing is saved: the client stores its choice with music.lyrics.set {source: "lrclib"}.
+            "music.lyrics.lookup" => {
+                let track = self.track_by_id(arg_i64(&args,"track_id")?)?;
+                let query = args.get("query").and_then(Value::as_str);
+                let duration = args.get("duration_seconds").and_then(Value::as_f64).filter(|d| *d > 0.0).or(track.duration_seconds.map(|d| d as f64));
+                Ok(json!(lrclib::lookup(&track, query, duration).map_err(MusicError::Network)?))
             }
             // Removes saved lyrics only; a .lrc file beside the audio is the user's file and is left alone.
             "music.lyrics.clear" => { let id = arg_i64(&args,"track_id")?; let n = self.db()?.execute("DELETE FROM lyrics WHERE track_id=?1", [id])?; Ok(json!({"removed": n > 0})) }
@@ -441,6 +456,25 @@ mod tests {
   assert!(app.execute("music.lyrics.set",json!({"track_id":9,"text":"x"})).is_err());
   assert!(app.execute("music.lyrics.get",json!({"track_id":9})).is_err());
   let _=std::fs::remove_dir_all(&dir);
+ }
+ #[test] fn lyrics_source_is_stored_and_validated(){
+  let app=MusicApp::open(":memory:").unwrap(); with_tracks(&app,1);
+  assert_eq!(app.execute("music.lyrics.set",json!({"track_id":1,"text":"[00:01.00]hi","source":"lrclib"})).unwrap()["source"],"lrclib");
+  assert_eq!(app.execute("music.lyrics.get",json!({"track_id":1})).unwrap()["source"],"lrclib");
+  assert_eq!(app.execute("music.lyrics.set",json!({"track_id":1,"text":"mine"})).unwrap()["source"],"saved");
+  assert!(app.execute("music.lyrics.set",json!({"track_id":1,"text":"x","source":"web"})).is_err());
+ }
+ #[test] fn lyrics_table_from_before_source_column_is_upgraded(){
+  let path=std::env::temp_dir().join(format!("openmusic-lyrics-upgrade-{}.sqlite",std::process::id()));
+  let _=std::fs::remove_file(&path);
+  { let c=Connection::open(&path).unwrap(); c.execute_batch("CREATE TABLE tracks (id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE, title TEXT NOT NULL, artist TEXT NOT NULL DEFAULT 'Unknown Artist', album TEXT NOT NULL DEFAULT 'Unknown Album', duration_seconds INTEGER, added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE lyrics (track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE, text TEXT NOT NULL);
+    INSERT INTO tracks(id,path,title) VALUES(1,'/a.mp3','A'); INSERT INTO lyrics VALUES(1,'old words');").unwrap(); }
+  let app=MusicApp::open(&path).unwrap();
+  let l=app.execute("music.lyrics.get",json!({"track_id":1})).unwrap();
+  assert_eq!(l["text"],"old words"); assert_eq!(l["source"],"saved");
+  drop(app);
+  for suffix in ["","-wal","-shm"]{let _=std::fs::remove_file(format!("{}{suffix}",path.display()));}
  }
  #[test] fn queue_survives_reopen(){
   let path=std::env::temp_dir().join(format!("openmusic-queue-test-{}.sqlite",std::process::id()));

@@ -15,7 +15,7 @@ pub struct Lyrics {
     /// True when every line has a timestamp (LRC), so the UI can follow playback.
     pub synced: bool,
     pub lines: Vec<LyricLine>,
-    /// "saved" (pasted or imported into the library) or "file" (a .lrc beside the audio file).
+    /// "saved" (pasted or imported into the library), "lrclib" (looked up on lrclib.net), or "file" (a .lrc beside the audio).
     pub source: &'static str,
 }
 

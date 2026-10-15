@@ -6,6 +6,7 @@ import type {Backend, ImportResult, Playback, Playlist, Track} from './backend';
 import {Queue, type RepeatMode, type SavedQueue} from './queue';
 import {makeLyrics, MAX_LYRICS_BYTES} from './lyrics';
 import {extractAudio} from './mp4audio';
+import {lookup as lrclibLookup} from './lrclib';
 
 const AUDIO_EXTENSIONS=['mp3','flac','wav','ogg','m4a','aac','alac'];
 const DB_NAME='openmusic';
@@ -35,7 +36,12 @@ function openDb():Promise<IDBDatabase>{
     // Another open tab still on the old version would block the upgrade indefinitely.
     open.onblocked=()=>fail(new Error('Close other OpenMusic tabs so the library can be updated, then reload.'));
     open.onsuccess=()=>ok(open.result);
-    open.onerror=()=>fail(open.error??new Error('Could not open the on-device music library'));
+    open.onerror=e=>{
+      // A newer build (since rolled back) already upgraded this device's library. Open it at its current
+      // version instead of failing: newer versions only ever add stores, so everything this build needs is there.
+      if(open.error?.name==='VersionError'){e.preventDefault();const any=indexedDB.open(DB_NAME);any.onsuccess=()=>ok(any.result);any.onerror=()=>fail(any.error??new Error('Could not open the on-device music library'));return;}
+      fail(open.error??new Error('Could not open the on-device music library'));
+    };
   });
 }
 
@@ -194,16 +200,24 @@ export async function createWebBackend():Promise<Backend>{
       case 'music.lyrics.get':{
         const id=argInt(args,'track_id');await trackById(id);
         // The browser can't read files beside the audio, so every web lyric is stored in the library ("saved").
-        const stored=await req(db.transaction('lyrics').objectStore('lyrics').get(id)) as {text:string}|undefined;
-        return stored?makeLyrics(stored.text,'saved'):null;
+        const stored=await req(db.transaction('lyrics').objectStore('lyrics').get(id)) as {text:string,source?:string}|undefined;
+        return stored?makeLyrics(stored.text,stored.source==='lrclib'?'lrclib':'saved'):null;
       }
       case 'music.lyrics.set':{
         const id=argInt(args,'track_id'),text=argStr(args,'text').trim();
         if(!text)throw request("missing or empty: text");
+        const source=args.source??'saved';
+        if(source!=='saved'&&source!=='lrclib')throw request(`source must be "saved" or "lrclib", not ${JSON.stringify(source)}`);
         if(new Blob([text]).size>MAX_LYRICS_BYTES)throw request(`Lyrics must be under ${MAX_LYRICS_BYTES/1024} KB`);
         await trackById(id);
-        const tx=db.transaction('lyrics','readwrite');tx.objectStore('lyrics').put({text,source:'saved'},id);await done(tx);
-        return makeLyrics(text,'saved');
+        const tx=db.transaction('lyrics','readwrite');tx.objectStore('lyrics').put({text,source},id);await done(tx);
+        return makeLyrics(text,source);
+      }
+      case 'music.lyrics.lookup':{
+        const track=publicTrack(await trackById(argInt(args,'track_id')));
+        const query=typeof args.query==='string'?args.query:null;
+        const d=typeof args.duration_seconds==='number'&&args.duration_seconds>0?args.duration_seconds:track.duration_seconds;
+        return lrclibLookup(track,query,d??null);
       }
       case 'music.lyrics.clear':{
         const id=argInt(args,'track_id');

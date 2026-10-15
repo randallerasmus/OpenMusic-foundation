@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {loadBackend, type Backend, type Playback, type Playlist, type QueueView, type Track} from './backend';
 import {Music2, Library, Search, ListMusic, Play, Pause, SkipBack, SkipForward, FolderPlus, Plus, Volume2, Disc3, ArrowLeft, Shuffle, Repeat, Repeat1} from 'lucide-react';
 import {MobileApp, useIsPhone} from './mobile';
+import {buildLabel} from './buildInfo';
 import './style.css';
 
 function App({backend}:{backend:Backend}){
@@ -41,7 +42,7 @@ function App({backend}:{backend:Backend}){
  <button className={selected==='Library'?'nav active':'nav'} onClick={()=>choose('Library')}><Library size={18}/>Library</button>
  <div className="side-label">YOUR COLLECTION</div><div className="side-section"><span>Playlists</span><button title="Create playlist" onClick={makePlaylist}><Plus size={17}/></button></div>
  <div className="playlist-navigation">{playlists.map(p=><button key={p.id} className={currentPlaylist===p.id?'nav active':'nav'} onClick={()=>choose(p.name,p.id)}><ListMusic size={17}/><span className="truncate">{p.name}</span></button>)}</div>
- <div className="sidebar-bottom">Made for your music. <br/>Private. Local. Yours.<small>OpenMusic v0.1 foundation</small></div></aside>
+ <div className="sidebar-bottom">Made for your music. <br/>Private. Local. Yours.<small>OpenMusic {buildLabel}</small></div></aside>
  <main className="main"><header className="toolbar"><div className="breadcrumbs"><button aria-label="Library" onClick={()=>choose('Library')}><ArrowLeft size={17}/></button><span>{selected}</span></div><div className="search"><Search size={17}/><input placeholder="Search your library" aria-label="Search library" value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="import" title={web?"Add songs":"Import music"} aria-label={web?"Add songs":"Import music"} onClick={importMusic}><FolderPlus size={17}/> Import music</button></header>
  <div className="content"><div className="eyebrow">YOUR SOUNDTRACK</div><h1>{currentPlaylist!==null?selected:selected==='Home'?'Music, your way.':'Your library'}</h1><p className="subtitle">{currentPlaylist!==null?'A playlist you control.':selected==='Home'?'A home for the music you own. No subscription required.':'All your tracks in one beautiful place.'}</p>
  {error&&<div className="error" role="alert">{error}<button onClick={()=>setError('')}>Dismiss</button></div>}{notice&&<div className="notice">{notice}<button onClick={()=>setNotice('')}>×</button></div>}
