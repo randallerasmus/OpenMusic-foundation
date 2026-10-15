@@ -1,0 +1,12 @@
+# Apache equivalent of _headers, for hosts that ignore that file.
+AddType application/manifest+json .webmanifest
+
+# The service worker and app shell must revalidate so new deployments reach installed apps.
+<IfModule mod_headers.c>
+  <FilesMatch "^(sw\.js|index\.html|manifest\.webmanifest)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  <If "%{REQUEST_URI} =~ m#^/assets/#">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </If>
+</IfModule>
