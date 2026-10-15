@@ -138,6 +138,9 @@
 .m-suggest svg,.m-recent-item svg{color:var(--text2);flex:none}
 .m-suggest span,.m-recent-item span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m-recent li{display:flex;align-items:center}
+.m-suggest-yt svg{color:#e0302a}
+.yt-connected p{font-size:15px;line-height:1.45;color:var(--text2);margin:0 0 12px}
+.yt-connected b{color:var(--text)}
 .m-recent-x{width:36px;height:36px;display:grid;place-items:center;color:var(--text2);flex:none}
 .m-recent-head{display:flex;align-items:baseline;justify-content:space-between}
 .m-recent-head button{color:var(--accent);font-weight:600;font-size:15px}

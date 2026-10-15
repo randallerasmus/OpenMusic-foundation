@@ -19,8 +19,8 @@ export function useYouTube(initialSettings:YouTubeSettings|null,initialChannel:Y
   finally{setLoading(false);}
  }
  return {settings,channel,loading,error,
-  refresh:()=>{if(settings)void load(settings);},
-  save:s=>{saveSettings(s);setSettings(s);setChannel(null);setError('');if(s)void load(s);},
+  refresh:()=>{if(settings?.channel)void load(settings);},
+  save:s=>{saveSettings(s);setSettings(s);setChannel(null);setError('');if(s?.channel)void load(s);},
  };
 }
 
@@ -31,8 +31,13 @@ export function YouTubeScreen({yt,openExtract}:{yt:YouTubeState,openExtract?():v
  const [filter,setFilter]=useState('');
  const [editing,setEditing]=useState(false);
  // Refresh on open when the cached list is over an hour old.
- useEffect(()=>{if(yt.settings&&!yt.loading&&(!yt.channel||Date.now()-yt.channel.fetchedAt>STALE_MS))yt.refresh();},[]);
+ useEffect(()=>{if(yt.settings?.channel&&!yt.loading&&(!yt.channel||Date.now()-yt.channel.fetchedAt>STALE_MS))yt.refresh();},[]);
  if(!yt.settings||editing)return <Setup initial={yt.settings} onSave={s=>{yt.save(s);setEditing(false);}} onCancel={yt.settings?()=>setEditing(false):undefined}/>;
+ if(!yt.settings.channel)return <div className="yt-connected">
+  <p><b>YouTube is connected.</b> Type anything in the search field and press Search (or tap “Search YouTube for…”) to see YouTube results.</p>
+  <p>Add your own channel too, to list your uploads here and get their audio.</p>
+  <div className="yt-setup-buttons"><button className="m-primary" onClick={()=>setEditing(true)}>Add My Channel</button></div>
+ </div>;
  const q=filter.trim().toLowerCase();
  const videos=(yt.channel?.videos??[]).filter(v=>!q||v.title.toLowerCase().includes(q));
  return <>
@@ -66,16 +71,17 @@ export function VideoList({videos,openExtract}:{videos:YouTubeVideo[],openExtrac
 function Setup({initial,onSave,onCancel}:{initial:YouTubeSettings|null,onSave(s:YouTubeSettings|null):void,onCancel?():void}){
  const [apiKey,setApiKey]=useState(initial?.apiKey??'');
  const [channel,setChannel]=useState(initial?.channel??'');
- const validChannel=parseChannel(channel)!==null;
+ // The channel is optional: the key alone is enough to search all of YouTube.
+ const validChannel=!channel.trim()||parseChannel(channel)!==null;
  return <form className="yt-setup" onSubmit={e=>{e.preventDefault();if(apiKey.trim()&&validChannel)onSave({apiKey:apiKey.trim(),channel:channel.trim()});}}>
-  <p>Connect your channel to see your videos here. This uses YouTube's official API with your own free API key, which stays on this device.</p>
+  <p>Add a free YouTube API key to <b>search all of YouTube</b> from the search field. This uses YouTube's official API; the key stays on this device.</p>
   <ol>
    <li>In Google Cloud, <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener noreferrer">enable the YouTube Data API v3</a> (create a project if asked).</li>
    <li>Under <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Credentials</a>, create an API key. Restrict it to the YouTube Data API v3 and to this site's address.</li>
-   <li>Paste the key and your channel's @handle below.</li>
+   <li>Paste the key below. Optionally add your channel's @handle to list your own uploads.</li>
   </ol>
   <label>API key<input value={apiKey} onChange={e=>setApiKey(e.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="AIza…"/></label>
-  <label>Channel<input value={channel} onChange={e=>setChannel(e.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="@yourchannel"/></label>
+  <label>Your channel (optional)<input value={channel} onChange={e=>setChannel(e.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} placeholder="@yourchannel"/></label>
   {channel.trim()&&!validChannel&&<small className="yt-invalid">Use your @handle, a channel ID (UC…), or your channel's URL.</small>}
   <div className="yt-setup-buttons">
    {initial&&<button type="button" className="yt-link-btn danger" onClick={()=>onSave(null)}>Disconnect</button>}

@@ -61,6 +61,7 @@ export function parseChannel(input:string):{handle:string}|{id:string}|null{
 
 /** Fetches the channel's public uploads, newest first, and caches them on this device. */
 export async function fetchChannel(settings:YouTubeSettings):Promise<YouTubeChannel>{
+  if(!settings.channel.trim())throw new Error('Add your channel to list its videos.');
   const which=parseChannel(settings.channel);
   if(!which)throw new Error('Enter your channel as @handle (e.g. @yourname) or a channel ID starting with UC.');
   const channels=await call<ChannelsResponse>('channels',{part:'snippet,contentDetails',...('id' in which?{id:which.id}:{forHandle:which.handle})},settings.apiKey);

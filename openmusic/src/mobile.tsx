@@ -98,7 +98,7 @@ export function MobileApp(p:MobileProps){
 
 function titleOf(s:Screen){
  switch(s.name){case 'playlist':return s.title;case 'artist':return s.artist;case 'album':return s.album;
-  default:return {home:'Home',library:'Library',playlists:'Playlists',artists:'Artists',albums:'Albums',songs:'Songs',recent:'Recently Added',youtube:'My YouTube Channel',search:'Search'}[s.name];}
+  default:return {home:'Home',library:'Library',playlists:'Playlists',artists:'Artists',albums:'Albums',songs:'Songs',recent:'Recently Added',youtube:'YouTube',search:'Search'}[s.name];}
 }
 
 function ScreenView({p,screen,query,searchState,push,back}:{p:ViewProps,screen:Screen,query:string,searchState:SearchState,push(s:Screen):void,back:{label:string,go():void}|null}){
@@ -235,7 +235,7 @@ function SearchScreen({p,query,st,push}:{p:ViewProps,query:string,st:SearchState
   {p.openExtract&&<button className="m-card m-card-wide" style={{'--hue':350} as React.CSSProperties} onClick={p.openExtract}>
    <span className="m-card-icon" aria-hidden="true"><AudioLines/></span><span className="m-card-label">Extract Audio from a Video<small>Your own videos, e.g. from YouTube Studio</small></span></button>}
   <button className="m-card m-card-wide" style={{'--hue':28} as React.CSSProperties} onClick={()=>push({name:'youtube'})}>
-   <span className="m-card-icon" aria-hidden="true"><CirclePlay/></span><span className="m-card-label">My YouTube Channel<small>{p.yt.channel?`${p.yt.channel.title} · ${plural(p.yt.channel.videos.length,'video')}`:'Find your videos and get their audio'}</small></span></button>
+   <span className="m-card-icon" aria-hidden="true"><CirclePlay/></span><span className="m-card-label">YouTube<small>{!p.yt.settings?'Set up searching all of YouTube':p.yt.channel?`Search YouTube · ${p.yt.channel.title}: ${plural(p.yt.channel.videos.length,'video')}`:'Connected: search above to see YouTube results'}</small></span></button>
  </div>;
  if(p.tracks.length===0&&!q)return <>{title}{tools}<EmptyLibrary web={p.web} importMusic={p.importMusic}/></>;
  if(!q)return <>{title}{!st.typing&&st.recent.length>0&&<RecentSearches st={st} compact/>}{tools}<BrowseGrid p={p} push={push}/></>;
@@ -253,6 +253,7 @@ function SearchScreen({p,query,st,push}:{p:ViewProps,query:string,st:SearchState
   const suggestions=names.filter(n=>{const k=fold(n);if(seen.has(k))return false;seen.add(k);return true;}).slice(0,8);
   return <>{title}<ul className="m-suggest" aria-label="Suggestions">
    <li><button onPointerDown={e=>e.preventDefault()} onClick={()=>st.pick(trimmed)}><Search size={17}/><span>Search for “<b>{trimmed}</b>”</span></button></li>
+   <li><button className="m-suggest-yt" onPointerDown={e=>e.preventDefault()} onClick={()=>{if(!p.yt.settings){blurActive();push({name:'youtube'});return;}setTab('youtube');st.pick(trimmed);}}><CirclePlay size={17}/><span>Search YouTube for “<b>{trimmed}</b>”</span></button></li>
    {suggestions.map(n=><li key={n}><button onPointerDown={e=>e.preventDefault()} onClick={()=>st.pick(n)}><Search size={17}/><span>{n}</span></button></li>)}
   </ul></>;
  }
