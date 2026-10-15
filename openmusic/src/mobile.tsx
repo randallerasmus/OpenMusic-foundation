@@ -1,7 +1,10 @@
 import React, {useEffect, useMemo, useState, useSyncExternalStore} from 'react';
-import type {Playback, Playlist, QueueView, Track} from './backend';
-import {ChevronLeft, ChevronRight, Clock, Disc3, Ellipsis, FolderPlus, House, Library, ListEnd, ListMusic, ListPlus, ListStart, Mic2, Music2, Pause, Play, Plus, Search, SkipForward, X} from 'lucide-react';
-import {NowPlaying} from './nowPlaying';
+import type {ExtractedAudio, ImportResult, Playback, Playlist, QueueView, Track} from './backend';
+import {ExtractSheet} from './extractSheet';
+import {getCachedChannel, getSettings} from './youtube';
+import {useYouTube, VideoList, YouTubeScreen, type YouTubeState} from './youtubeScreen';
+import {AudioLines, ChevronLeft, CirclePlay, ChevronRight, Clock, Disc3, Ellipsis, FolderPlus, House, Library, ListEnd, ListMusic, ListPlus, ListStart, Mic2, Music2, Pause, Play, Plus, Search, SkipForward, X} from 'lucide-react';
+import {NowPlaying, type SheetMode} from './nowPlaying';
 import './mobile.css';
 
 // Phone layout: large-title screens, an inset-divider navigation list, and a floating glass mini player and tab bar.
@@ -12,12 +15,16 @@ export type MobileProps={
  clearError():void,clearNotice():void,togglePlay():void,seek(seconds:number):void,setVolume(v:number):void,
  /** Runs a command through the shared surface, reporting failures in the error banner. */
  run(name:string,args?:Record<string,unknown>):void,
+ /** Like run, but hands back the result (and still throws), for views that show what a command returns. */
+ request<T>(name:string,args?:Record<string,unknown>):Promise<T>,
  importMusic():void,makePlaylist():void,addToPlaylist(t:Track):void,playlistTracks(id:number):Promise<Track[]>,
+ /** Present only where the backend supports it (web for now). */
+ extractAudio?(video:File):Promise<ExtractedAudio>,addAudioFile?(file:File):Promise<ImportResult>,
 };
 /** What the screens get: MobileProps plus actions that also drive the sheet and the song menu. */
-type ViewProps=MobileProps&{playList(tracks:Track[],index:number,source:string):void,trackMenu(t:Track):void};
+type ViewProps=MobileProps&{playList(tracks:Track[],index:number,source:string):void,trackMenu(t:Track):void,openExtract?():void,yt:YouTubeState};
 type Tab='home'|'library'|'search';
-type Screen={name:Tab|'playlists'|'artists'|'albums'|'songs'|'recent'}|{name:'playlist',id:number,title:string}|{name:'artist',artist:string}|{name:'album',album:string};
+type Screen={name:Tab|'playlists'|'artists'|'albums'|'songs'|'recent'|'youtube'}|{name:'playlist',id:number,title:string}|{name:'artist',artist:string}|{name:'album',album:string};
 
 const PHONE='(max-width:600px)';
 export function useIsPhone(){
@@ -53,7 +60,11 @@ export function MobileApp(p:MobileProps){
  const sheetTrack=sheet===null?undefined:p.playing??p.tracks.find(t=>t.id===sheet);
  useEffect(()=>{if(p.error)setSheet(null);},[p.error]);
  const [menu,setMenu]=useState<Track|null>(null);
- const app:ViewProps={...p,trackMenu:setMenu,playList:(tracks,index,source)=>{
+ // Lyrics or Up Next; kept here so the sheet reopens the way it was left.
+ const [sheetMode,setSheetMode]=useState<SheetMode>('queue');
+ const [extracting,setExtracting]=useState(false);
+ const yt=useYouTube(getSettings(),getCachedChannel());
+ const app:ViewProps={...p,yt,trackMenu:setMenu,openExtract:p.extractAudio&&(()=>setExtracting(true)),playList:(tracks,index,source)=>{
   p.run('music.queue.set',{track_ids:tracks.map(t=>t.id),start_index:index,source});setSheet(tracks[index].id);
  }};
  return <div className={typing?'m-app m-typing':'m-app'}>
@@ -64,7 +75,8 @@ export function MobileApp(p:MobileProps){
   </div>
   <MiniPlayer p={p} open={()=>p.playing&&setSheet(p.playing.id)}/>
   <GlassTabBar active={root} lastTab={lastTab} onTab={tab} query={query} onQuery={search} onTyping={setTyping}/>
-  {sheetTrack&&<NowPlaying track={sheetTrack} status={p.status} queue={p.queue} run={p.run} onClose={()=>setSheet(null)} togglePlay={p.togglePlay} seek={p.seek} setVolume={p.setVolume} addToPlaylist={p.addToPlaylist}/>}
+  {sheetTrack&&<NowPlaying track={sheetTrack} status={p.status} queue={p.queue} run={p.run} request={p.request} mode={sheetMode} setMode={setSheetMode} onClose={()=>setSheet(null)} togglePlay={p.togglePlay} seek={p.seek} setVolume={p.setVolume} addToPlaylist={p.addToPlaylist}/>}
+  {extracting&&p.extractAudio&&p.addAudioFile&&<ExtractSheet extract={p.extractAudio} add={p.addAudioFile} onClose={()=>setExtracting(false)}/>}
   {menu&&<TrackMenu track={menu} onClose={()=>setMenu(null)} actions={[
    {icon:<ListStart/>,label:'Play Next',onClick:()=>p.run('music.queue.add',{track_ids:[menu.id],position:'next'})},
    {icon:<ListEnd/>,label:'Add to Queue',onClick:()=>p.run('music.queue.add',{track_ids:[menu.id],position:'last'})},
@@ -75,7 +87,7 @@ export function MobileApp(p:MobileProps){
 
 function titleOf(s:Screen){
  switch(s.name){case 'playlist':return s.title;case 'artist':return s.artist;case 'album':return s.album;
-  default:return {home:'Home',library:'Library',playlists:'Playlists',artists:'Artists',albums:'Albums',songs:'Songs',recent:'Recently Added',search:'Search'}[s.name];}
+  default:return {home:'Home',library:'Library',playlists:'Playlists',artists:'Artists',albums:'Albums',songs:'Songs',recent:'Recently Added',youtube:'My YouTube Channel',search:'Search'}[s.name];}
 }
 
 function ScreenView({p,screen,query,push,back}:{p:ViewProps,screen:Screen,query:string,push(s:Screen):void,back:{label:string,go():void}|null}){
@@ -119,6 +131,7 @@ function ScreenView({p,screen,query,push,back}:{p:ViewProps,screen:Screen,query:
   case 'album':return <>{header(false)}<TrackList p={p} tracks={p.tracks.filter(t=>t.album===screen.album)} source={screen.album}/></>;
   case 'playlist':return <>{header(false)}<PlaylistTracks p={p} id={screen.id} source={screen.title}/></>;
   case 'search':return <SearchScreen p={p} query={query} push={push}/>;
+  case 'youtube':return <>{header(false)}<YouTubeScreen yt={p.yt} openExtract={p.openExtract}/></>;
  }
 }
 
@@ -178,17 +191,26 @@ function TrackMenu({track,actions,onClose}:{track:Track,actions:{icon:React.Reac
 function SearchScreen({p,query,push}:{p:ViewProps,query:string,push(s:Screen):void}){
  const q=fold(query.trim());
  const title=<header className="m-header"><div className="m-title-row"><h1>Search</h1></div></header>;
- if(p.tracks.length===0)return <>{title}<EmptyLibrary web={p.web} importMusic={p.importMusic}/></>;
- if(!q)return <>{title}<BrowseGrid p={p} push={push}/></>;
+ const tools=<div className="m-cards m-tools">
+  {p.openExtract&&<button className="m-card m-card-wide" style={{'--hue':350} as React.CSSProperties} onClick={p.openExtract}>
+   <span className="m-card-icon" aria-hidden="true"><AudioLines/></span><span className="m-card-label">Extract Audio from a Video<small>Your own videos, e.g. from YouTube Studio</small></span></button>}
+  <button className="m-card m-card-wide" style={{'--hue':28} as React.CSSProperties} onClick={()=>push({name:'youtube'})}>
+   <span className="m-card-icon" aria-hidden="true"><CirclePlay/></span><span className="m-card-label">My YouTube Channel<small>{p.yt.channel?`${p.yt.channel.title} · ${plural(p.yt.channel.videos.length,'video')}`:'Find your videos and get their audio'}</small></span></button>
+ </div>;
+ if(p.tracks.length===0&&!q)return <>{title}{tools}<EmptyLibrary web={p.web} importMusic={p.importMusic}/></>;
+ if(!q)return <>{title}{tools}<BrowseGrid p={p} push={push}/></>;
  const songs=p.tracks.filter(t=>fold(`${t.title} ${t.artist} ${t.album}`).includes(q));
  const artists=groupBy(p.tracks,t=>t.artist).filter(([name])=>fold(name).includes(q));
  const albums=groupBy(p.tracks,t=>t.album).filter(([name])=>fold(name).includes(q));
  const playlists=p.playlists.filter(pl=>fold(pl.name).includes(q));
- if(!songs.length&&!artists.length&&!albums.length&&!playlists.length)return <>{title}<p className="m-hint">No results for “{query.trim()}” in your library.</p></>;
+ const videos=(p.yt.channel?.videos??[]).filter(v=>fold(v.title).includes(q));
+ if(!songs.length&&!artists.length&&!albums.length&&!playlists.length&&!videos.length)return <>{title}<p className="m-hint">No results for “{query.trim()}” in your library.</p></>;
  return <>{title}
   {songs.length>0&&<><h2 className="m-section">Songs</h2><TrackList p={p} tracks={songs} source={`Search: ${query.trim()}`}/></>}
   {artists.length>0&&<><h2 className="m-section m-section-gap">Artists</h2><NavList rows={artists.map(([artist,ts])=>({icon:<Mic2/>,label:artist,detail:plural(ts.length,'song'),onClick:()=>push({name:'artist',artist})}))}/></>}
   {albums.length>0&&<><h2 className="m-section m-section-gap">Albums</h2><div className="m-shelf">{albums.map(([album,ts])=><Tile key={album} title={album} subtitle={plural(ts.length,'song')} onClick={()=>push({name:'album',album})}/>)}</div></>}
+  {videos.length>0&&<><h2 className="m-section m-section-gap">On Your YouTube Channel</h2><VideoList videos={videos.slice(0,20)} openExtract={p.openExtract}/>
+   {videos.length>20&&<button className="yt-link-btn" onClick={()=>push({name:'youtube'})}>See all {videos.length} matching videos</button>}</>}
   {playlists.length>0&&<><h2 className="m-section m-section-gap">Playlists</h2><NavList rows={playlists.map(pl=>({icon:<ListMusic/>,label:pl.name,onClick:()=>push({name:'playlist',id:pl.id,title:pl.name})}))}/></>}
  </>;
 }

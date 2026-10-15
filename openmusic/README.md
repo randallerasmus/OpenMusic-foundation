@@ -9,6 +9,9 @@ OpenMusic is an independently designed, open-source, local-first music player. T
 - SQLite WAL-mode database; recursive folder import; basic searchable local library with track title derived from filename.
 - Persistent playlists (create, list, add track, list tracks).
 - Persistent play queue: play a list from any song, next/previous, automatic advance at end of track, play next / add to queue, reorder, remove, shuffle and repeat (off/all/one). The queue survives restarts (SQLite on desktop/CLI, localStorage on web).
+- Extract audio from your own videos: choose an MP4/MOV/M4V (for example one downloaded from YouTube Studio) and its AAC/ALAC audio is copied into an `.m4a` without re-encoding, then added to the library and/or saved as a file. Web app only for now.
+- My YouTube Channel: lists your public uploads through the official YouTube Data API v3 using your own API key (kept on the device), with links to download each video in YouTube Studio. OpenMusic never downloads media from YouTube itself.
+- Lyrics you supply: a `.lrc` file with the same name beside the song (desktop/CLI) or chosen with it when importing (web), or lyrics pasted in the app. Timed LRC lyrics follow playback in the Now Playing sheet; tap a line to jump to it. Nothing is fetched online.
 - Central `MusicApp::execute(name, args)` command dispatcher shared by Tauri and CLI.
 - JSON-lines CLI control mode (`serve-stdio`), reusable by agents with an explicitly launched local process.
 
@@ -71,7 +74,7 @@ cargo run -p openmusic-cli -- serve-stdio
 
 and returns one JSON object per line with `ok`, `data` or `error`.
 
-Queue commands: `music.queue.get`, `music.queue.set {track_ids, start_index?, source?}`, `music.queue.add {track_ids, position?: "next"|"last"}`, `music.queue.jump {index}`, `music.queue.remove {index}`, `music.queue.move {from, to}`, `music.queue.clear`, `music.next`, `music.previous` (restarts the track after 3 s), `music.repeat.set {mode: "off"|"all"|"one"}`, `music.shuffle.set {enabled}`. `music.play {track_id}` plays a single track and replaces the queue with it. `music.status` also reports `queue_index`, `queue_length`, `queue_revision`, `repeat`, `shuffle` and `has_next`. Playback runs while this process lives. **Desktop and CLI use distinct default database locations**; a configurable shared data directory is future work.
+Queue commands: `music.queue.get`, `music.queue.set {track_ids, start_index?, source?}`, `music.queue.add {track_ids, position?: "next"|"last"}`, `music.queue.jump {index}`, `music.queue.remove {index}`, `music.queue.move {from, to}`, `music.queue.clear`, `music.next`, `music.previous` (restarts the track after 3 s), `music.repeat.set {mode: "off"|"all"|"one"}`, `music.shuffle.set {enabled}`. `music.play {track_id}` plays a single track and replaces the queue with it. Lyrics commands: `music.lyrics.get {track_id}` (saved lyrics, else a `.lrc` beside the file, else null), `music.lyrics.set {track_id, text}` (plain or LRC), `music.lyrics.clear {track_id}` (saved lyrics only; your `.lrc` files are never touched). `music.status` also reports `position_ms`, `queue_index`, `queue_length`, `queue_revision`, `repeat`, `shuffle` and `has_next`. Playback runs while this process lives. **Desktop and CLI use distinct default database locations**; a configurable shared data directory is future work.
 
 ## Architecture
 

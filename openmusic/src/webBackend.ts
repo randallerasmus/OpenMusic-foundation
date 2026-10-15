@@ -4,10 +4,12 @@
 // uploaded, and playback works offline once the files are stored.
 import type {Backend, ImportResult, Playback, Playlist, Track} from './backend';
 import {Queue, type RepeatMode, type SavedQueue} from './queue';
+import {makeLyrics, MAX_LYRICS_BYTES} from './lyrics';
+import {extractAudio} from './mp4audio';
 
 const AUDIO_EXTENSIONS=['mp3','flac','wav','ogg','m4a','aac','alac'];
 const DB_NAME='openmusic';
-// The queue is small and per-device, so it lives in localStorage rather than a new IndexedDB store (which would need a schema upgrade).
+// The queue is small and per-device, so it lives in localStorage.
 const QUEUE_KEY='openmusic.queue';
 
 type StoredTrack=Track&{fingerprint:string,mime:string};
@@ -18,14 +20,20 @@ function done(tx:IDBTransaction):Promise<void>{return new Promise((ok,fail)=>{tx
 
 function openDb():Promise<IDBDatabase>{
   return new Promise((ok,fail)=>{
-    const open=indexedDB.open(DB_NAME,1);
-    open.onupgradeneeded=()=>{
+    const open=indexedDB.open(DB_NAME,2);
+    // Each step upgrades from the version before it, so existing libraries keep their songs.
+    open.onupgradeneeded=e=>{
       const db=open.result;
-      db.createObjectStore('tracks',{keyPath:'id',autoIncrement:true}).createIndex('fingerprint','fingerprint',{unique:true});
-      db.createObjectStore('files'); // key: track id, value: audio Blob
-      db.createObjectStore('playlists',{keyPath:'id',autoIncrement:true}).createIndex('name','name',{unique:true});
-      db.createObjectStore('playlist_tracks',{keyPath:'id',autoIncrement:true}).createIndex('playlist_id','playlist_id');
+      if(e.oldVersion<1){
+        db.createObjectStore('tracks',{keyPath:'id',autoIncrement:true}).createIndex('fingerprint','fingerprint',{unique:true});
+        db.createObjectStore('files'); // key: track id, value: audio Blob
+        db.createObjectStore('playlists',{keyPath:'id',autoIncrement:true}).createIndex('name','name',{unique:true});
+        db.createObjectStore('playlist_tracks',{keyPath:'id',autoIncrement:true}).createIndex('playlist_id','playlist_id');
+      }
+      if(e.oldVersion<2)db.createObjectStore('lyrics'); // key: track id, value: {text, source}
     };
+    // Another open tab still on the old version would block the upgrade indefinitely.
+    open.onblocked=()=>fail(new Error('Close other OpenMusic tabs so the library can be updated, then reload.'));
     open.onsuccess=()=>ok(open.result);
     open.onerror=()=>fail(open.error??new Error('Could not open the on-device music library'));
   });
@@ -59,7 +67,7 @@ export async function createWebBackend():Promise<Backend>{
 
   function status():Playback{
     return {track_id:currentId,playing:currentId!==null&&!audio.paused&&!audio.ended,volume:audio.volume,
-      position_seconds:Math.floor(audio.currentTime||0),duration_seconds:Number.isFinite(audio.duration)?Math.round(audio.duration):null,
+      position_seconds:Math.floor(audio.currentTime||0),position_ms:Math.round((audio.currentTime||0)*1000),duration_seconds:Number.isFinite(audio.duration)?Math.round(audio.duration):null,
       queue_index:queue.index,queue_length:queue.length,queue_revision:queue.revision,repeat:queue.repeat,shuffle:queue.shuffle,has_next:queue.peekNext()!==null};
   }
 
@@ -103,8 +111,9 @@ export async function createWebBackend():Promise<Backend>{
   });
 
   async function importFiles(files:File[]):Promise<ImportResult>{
-    const audioFiles=files.filter(f=>AUDIO_EXTENSIONS.includes(f.name.split('.').pop()?.toLowerCase()??'')||f.type.startsWith('audio/'));
-    let imported=0,already_present=0;
+    const ext=(f:File)=>f.name.split('.').pop()?.toLowerCase()??'';
+    const audioFiles=files.filter(f=>AUDIO_EXTENSIONS.includes(ext(f))||f.type.startsWith('audio/'));
+    let imported=0,already_present=0,lyrics=0;
     for(const file of audioFiles){
       // One transaction per file keeps memory bounded when importing many large files.
       const tx=db.transaction(['tracks','files'],'readwrite');
@@ -118,13 +127,25 @@ export async function createWebBackend():Promise<Backend>{
     }
     // Ask the browser not to evict the library under storage pressure (best effort; may be denied).
     if(imported>0)await navigator.storage?.persist?.().catch(()=>false);
-    return {imported,already_present};
+    // A .lrc chosen alongside the audio attaches to the song with the same file name (e.g. Song.mp3 + Song.lrc).
+    const lrcFiles=files.filter(f=>ext(f)==='lrc'&&f.size<=MAX_LYRICS_BYTES);
+    if(lrcFiles.length){
+      const stem=(name:string)=>name.replace(/\.[^.]+$/,'').toLowerCase();
+      const byStem=new Map((await req(db.transaction('tracks').objectStore('tracks').getAll()) as StoredTrack[]).map(t=>[stem(t.path),t.id]));
+      for(const file of lrcFiles){
+        const id=byStem.get(stem(file.name));
+        const text=(await file.text()).replace(/^\uFEFF/,'').trim();
+        if(id===undefined||!text)continue;
+        const tx=db.transaction('lyrics','readwrite');tx.objectStore('lyrics').put({text,source:'saved'},id);await done(tx);lyrics++;
+      }
+    }
+    return {imported,already_present,lyrics};
   }
 
   function pickFiles():Promise<File[]|null>{
     return new Promise(resolve=>{
       const input=document.createElement('input');
-      input.type='file';input.multiple=true;input.accept='audio/*,'+AUDIO_EXTENSIONS.map(e=>'.'+e).join(',');
+      input.type='file';input.multiple=true;input.accept='audio/*,'+[...AUDIO_EXTENSIONS,'lrc'].map(e=>'.'+e).join(',');
       // iOS Safari only reliably fires `change` for inputs that are attached to the document.
       input.hidden=true;input.setAttribute('data-openmusic-import','');
       const finish=(files:File[]|null)=>{input.remove();resolve(files);};
@@ -170,6 +191,26 @@ export async function createWebBackend():Promise<Backend>{
         return queueCommand(track);
       }
       case 'music.queue.get':return queue.view();
+      case 'music.lyrics.get':{
+        const id=argInt(args,'track_id');await trackById(id);
+        // The browser can't read files beside the audio, so every web lyric is stored in the library ("saved").
+        const stored=await req(db.transaction('lyrics').objectStore('lyrics').get(id)) as {text:string}|undefined;
+        return stored?makeLyrics(stored.text,'saved'):null;
+      }
+      case 'music.lyrics.set':{
+        const id=argInt(args,'track_id'),text=argStr(args,'text').trim();
+        if(!text)throw request("missing or empty: text");
+        if(new Blob([text]).size>MAX_LYRICS_BYTES)throw request(`Lyrics must be under ${MAX_LYRICS_BYTES/1024} KB`);
+        await trackById(id);
+        const tx=db.transaction('lyrics','readwrite');tx.objectStore('lyrics').put({text,source:'saved'},id);await done(tx);
+        return makeLyrics(text,'saved');
+      }
+      case 'music.lyrics.clear':{
+        const id=argInt(args,'track_id');
+        const tx=db.transaction('lyrics','readwrite');const store=tx.objectStore('lyrics');
+        const had=await req(store.getKey(id))!==undefined;store.delete(id);await done(tx);
+        return {removed:had};
+      }
       case 'music.queue.set':{
         const ids=argIds(args);
         const start=args.start_index==null?0:argIndex(args,'start_index');
@@ -245,5 +286,7 @@ export async function createWebBackend():Promise<Backend>{
     kind:'web',
     command:<T,>(name:string,args:Record<string,unknown>={})=>execute(name,args) as Promise<T>,
     async importMusic(){const files=await pickFiles();return files&&files.length?importFiles(files):null;},
+    extractAudio,
+    addAudioFile:file=>importFiles([file]),
   };
 }

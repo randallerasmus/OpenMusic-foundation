@@ -1,20 +1,23 @@
 import React, {useRef, useState} from 'react';
 import type {Playback, QueueView, Track} from './backend';
+import {LyricsPanel} from './lyricsPanel';
 import {Airplay, Ellipsis, GripHorizontal, Infinity as Autoplay, ListMusic, MessageSquareQuote, Music2, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, Star, Volume1, Volume2, Blend, X} from 'lucide-react';
 
-// Full-screen player sheet in its "Up Next" arrangement. Playback, queue, shuffle and repeat go through the
-// shared command surface; autoplay, crossfade, favourites, lyrics and output selection are not implemented
-// in the core yet, so they render disabled and say so.
+// Full-screen player sheet, showing either Up Next or Lyrics. Playback, queue, shuffle, repeat and lyrics go
+// through the shared command surface; autoplay, crossfade, favourites and output selection are not
+// implemented in the core yet, so they render disabled and say so.
 
 type Run=(name:string,args?:Record<string,unknown>)=>void;
-type Props={track:Track,status:Playback,queue:QueueView|null,run:Run,onClose():void,togglePlay():void,seek(seconds:number):void,setVolume(v:number):void,addToPlaylist(t:Track):void};
+export type SheetMode='queue'|'lyrics';
+type Request=<T>(name:string,args?:Record<string,unknown>)=>Promise<T>;
+type Props={track:Track,status:Playback,queue:QueueView|null,run:Run,request:Request,mode:SheetMode,setMode(m:SheetMode):void,onClose():void,togglePlay():void,seek(seconds:number):void,setVolume(v:number):void,addToPlaylist(t:Track):void};
 
 // No artwork is extracted yet, so each song gets a stable colour from its title instead of an invented cover.
 function hueOf(s:string){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return h;}
 function time(s:number|null|undefined){if(s==null||!isFinite(s))return '–:––';s=Math.max(0,Math.floor(s));return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;}
 const NEXT_REPEAT={off:'all',all:'one',one:'off'} as const;
 
-export function NowPlaying({track,status,queue,run,onClose,togglePlay,seek,setVolume,addToPlaylist}:Props){
+export function NowPlaying({track,status,queue,run,request,mode,setMode,onClose,togglePlay,seek,setVolume,addToPlaylist}:Props){
  const [drag,setDrag]=useState(0);
  const start=useRef<number|null>(null);
  const hue=hueOf(track.title+track.artist);
@@ -41,14 +44,14 @@ export function NowPlaying({track,status,queue,run,onClose,togglePlay,seek,setVo
    <button className="np-round" title="Add to playlist" aria-label="Add to playlist" onClick={()=>addToPlaylist(track)}><Ellipsis size={22}/></button>
   </header>
 
-  <div className="np-modes">
+  {mode==='queue'&&<div className="np-modes">
    <button {...toggle(status.shuffle?'Shuffle: on':'Shuffle: off',status.shuffle)} onClick={()=>run('music.shuffle.set',{enabled:!status.shuffle})}><Shuffle size={20}/></button>
    <button {...toggle(repeatLabel,status.repeat!=='off')} onClick={()=>run('music.repeat.set',{mode:NEXT_REPEAT[status.repeat]})}>{status.repeat==='one'?<Repeat1 size={20}/>:<Repeat size={20}/>}</button>
    <button {...planned('Autoplay')}><Autoplay size={22}/></button>
    <button {...planned('Crossfade')}><Blend size={20}/></button>
-  </div>
+  </div>}
 
-  <UpNext queue={queue} repeat={status.repeat} run={run}/>
+  {mode==='lyrics'?<LyricsPanel track={track} status={status} request={request} seek={seek}/>:<UpNext queue={queue} repeat={status.repeat} run={run}/>}
 
   <div className="np-bottom">
    <input className="np-bar" type="range" aria-label="Seek" min="0" max={duration??Math.max(status.position_seconds,1)} step="1"
@@ -67,9 +70,9 @@ export function NowPlaying({track,status,queue,run,onClose,togglePlay,seek,setVo
     <Volume2 size={18}/></div>
 
    <div className="np-tools">
-    <button {...planned('Lyrics')}><MessageSquareQuote size={24}/></button>
+    <button className={mode==='lyrics'?'active':undefined} aria-pressed={mode==='lyrics'} title="Lyrics" aria-label="Lyrics" onClick={()=>setMode(mode==='lyrics'?'queue':'lyrics')}><MessageSquareQuote size={24}/></button>
     <button {...planned('Audio output')}><Airplay size={24}/></button>
-    <button className="active" aria-pressed="true" title="Up Next" aria-label="Up Next"><ListMusic size={22}/></button>
+    <button className={mode==='queue'?'active':undefined} aria-pressed={mode==='queue'} title="Up Next" aria-label="Up Next" onClick={()=>setMode('queue')}><ListMusic size={22}/></button>
    </div>
   </div>
  </div>;

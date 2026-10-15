@@ -6,7 +6,9 @@ use std::{fs::File, io::BufReader, path::{Path, PathBuf}, sync::{atomic::{Atomic
 use thiserror::Error;
 use walkdir::WalkDir;
 
+pub mod lyrics;
 pub mod queue;
+use lyrics::{Lyrics, MAX_LYRICS_BYTES};
 use queue::{Queue, RepeatMode, SavedQueue};
 
 #[derive(Debug, Error)]
@@ -27,6 +29,8 @@ pub struct Track {
 pub struct PlaybackState {
     pub track_id: Option<i64>, pub playing: bool, pub volume: f32,
     pub position_seconds: u64, pub duration_seconds: Option<u64>,
+    /// Same position in milliseconds, for lyrics timing.
+    pub position_ms: u64,
 }
 /// `music.status` response: the audio thread's state plus where the queue stands.
 #[derive(Debug, Clone, Serialize)]
@@ -36,7 +40,7 @@ pub struct Status {
     pub repeat: RepeatMode, pub shuffle: bool, pub has_next: bool,
 }
 impl Default for PlaybackState {
-    fn default() -> Self { Self { track_id: None, playing: false, volume: 0.75, position_seconds: 0, duration_seconds: None } }
+    fn default() -> Self { Self { track_id: None, playing: false, volume: 0.75, position_seconds: 0, duration_seconds: None, position_ms: 0 } }
 }
 
 /// `Play` carries the queue cursor it was started for, so the audio thread can tell whether a finished track is still current.
@@ -72,7 +76,7 @@ impl AudioService {
                         if let Some(s) = &sink { s.play(); if let Ok(mut st) = shared.lock() { st.playing = true; } }
                         else if let Some((track, cursor)) = fallback { sink = start_track(&mut stream_and_handle, &shared, &track); playing_cursor = cursor; }
                     }
-                    Some(AudioCommand::Stop) => { if let Some(s) = sink.take() { s.stop(); } if let Ok(mut st) = shared.lock() { st.track_id = None; st.playing = false; st.position_seconds = 0; } }
+                    Some(AudioCommand::Stop) => { if let Some(s) = sink.take() { s.stop(); } if let Ok(mut st) = shared.lock() { st.track_id = None; st.playing = false; st.position_seconds = 0; st.position_ms = 0; } }
                     Some(AudioCommand::Seek(seconds)) => {
                         if let Some(s) = &sink { if let Err(e) = s.try_seek(Duration::from_secs(seconds)) { eprintln!("Seek failed: {e}"); } }
                     }
@@ -80,7 +84,7 @@ impl AudioService {
                     None => {}
                 }
                 if let Some(s) = &sink {
-                    if let Ok(mut st) = shared.lock() { st.position_seconds = s.get_pos().as_secs(); }
+                    if let Ok(mut st) = shared.lock() { let pos = s.get_pos(); st.position_seconds = pos.as_secs(); st.position_ms = pos.as_millis() as u64; }
                 }
                 // A drained sink means the track finished on its own: advance the queue, unless a command
                 // already moved it (cursor changed), in which case that command's Play is on its way.
@@ -120,7 +124,7 @@ fn start_track(stream: &mut Option<(OutputStream, rodio::OutputStreamHandle)>, s
             if let Ok(mut st) = shared.lock() {
                 s.set_volume(st.volume);
                 st.track_id = Some(track.id); st.playing = true;
-                st.position_seconds = 0; st.duration_seconds = track.duration_seconds;
+                st.position_seconds = 0; st.position_ms = 0; st.duration_seconds = track.duration_seconds;
             }
             Some(s)
         }
@@ -149,7 +153,8 @@ impl MusicApp {
           CREATE INDEX IF NOT EXISTS idx_track_title ON tracks(title COLLATE NOCASE);
           CREATE INDEX IF NOT EXISTS idx_track_artist ON tracks(artist COLLATE NOCASE);
           CREATE INDEX IF NOT EXISTS idx_playlist_order ON playlist_tracks(playlist_id, position);
-          CREATE TABLE IF NOT EXISTS queue_state (id INTEGER PRIMARY KEY CHECK (id = 1), state TEXT NOT NULL);")?;
+          CREATE TABLE IF NOT EXISTS queue_state (id INTEGER PRIMARY KEY CHECK (id = 1), state TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS lyrics (track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE, text TEXT NOT NULL);")?;
         let mut queue = Queue::default();
         let saved: Option<String> = conn.query_row("SELECT state FROM queue_state WHERE id=1", [], |r| r.get(0)).ok();
         // A saved queue that no longer parses is dropped rather than blocking startup.
@@ -181,6 +186,21 @@ impl MusicApp {
         let mut stmt = conn.prepare("SELECT id,path,title,artist,album,duration_seconds FROM tracks WHERE id=?1")?;
         ids.iter().map(|id| stmt.query_row([id], track_row).map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => MusicError::Request(format!("Track {id} not found")), e => e.into() })).collect()
+    }
+    /// Saved lyrics win; otherwise a `.lrc` with the same name beside the audio file. None when neither exists.
+    fn lyrics(&self, track_id: i64) -> Result<Option<Lyrics>> {
+        let track = self.track_by_id(track_id)?;
+        let saved: Option<String> = self.db()?.query_row("SELECT text FROM lyrics WHERE track_id=?1", [track_id], |r| r.get(0)).ok();
+        if let Some(text) = saved { return Ok(Some(Lyrics::new(text, "saved"))); }
+        let sidecar = Path::new(&track.path).with_extension("lrc");
+        match std::fs::metadata(&sidecar) {
+            Ok(meta) if meta.is_file() => {
+                if meta.len() as usize > MAX_LYRICS_BYTES { return Err(MusicError::Request(format!("{} is larger than {} KB", sidecar.display(), MAX_LYRICS_BYTES / 1024))); }
+                let text = String::from_utf8_lossy(&std::fs::read(&sidecar)?).into_owned();
+                Ok(Some(Lyrics::new(text.trim_start_matches('\u{feff}').to_owned(), "file")))
+            }
+            _ => Ok(None),
+        }
     }
     fn status(&self) -> Result<Status> {
         let playback = self.audio.status()?;
@@ -293,6 +313,17 @@ impl MusicApp {
             "music.seek" => { let sec=arg_i64(&args,"seconds")?; if sec<0 {return Err(MusicError::Request("seconds must be nonnegative".into()));} self.audio.send(AudioCommand::Seek(sec as u64))?; Ok(json!({"accepted":true})) }
             "music.volume.set" => { let v=args.get("volume").and_then(Value::as_f64).ok_or_else(|| MusicError::Request("volume must be a number".into()))?; if !(0.0..=1.0).contains(&v) {return Err(MusicError::Request("volume must be between 0 and 1".into()));} self.audio.send(AudioCommand::Volume(v as f32))?; Ok(json!({"accepted":true})) }
             "music.status" => Ok(json!(self.status()?)),
+            "music.lyrics.get" => Ok(json!(self.lyrics(arg_i64(&args,"track_id")?)?)),
+            "music.lyrics.set" => {
+                let id = arg_i64(&args,"track_id")?;
+                let text = arg_str(&args,"text")?.trim();
+                if text.len() > MAX_LYRICS_BYTES { return Err(MusicError::Request(format!("Lyrics must be under {} KB", MAX_LYRICS_BYTES / 1024))); }
+                self.track_by_id(id)?;
+                self.db()?.execute("INSERT INTO lyrics(track_id,text) VALUES(?1,?2) ON CONFLICT(track_id) DO UPDATE SET text=excluded.text", params![id, text])?;
+                Ok(json!(Lyrics::new(text.to_owned(), "saved")))
+            }
+            // Removes saved lyrics only; a .lrc file beside the audio is the user's file and is left alone.
+            "music.lyrics.clear" => { let id = arg_i64(&args,"track_id")?; let n = self.db()?.execute("DELETE FROM lyrics WHERE track_id=?1", [id])?; Ok(json!({"removed": n > 0})) }
             "music.playlist.create" => { let name=arg_str(&args,"name")?; let conn=self.db()?; conn.execute("INSERT INTO playlists(name) VALUES(?1)",[name])?; Ok(json!({"id":conn.last_insert_rowid(),"name":name})) }
             "music.playlist.list" => { let conn=self.db()?; let mut stmt=conn.prepare("SELECT id,name FROM playlists ORDER BY name COLLATE NOCASE")?; let rows=stmt.query_map([],|r|Ok(json!({"id":r.get::<_,i64>(0)?,"name":r.get::<_,String>(1)?})))?.collect::<std::result::Result<Vec<_>,_>>()?; Ok(json!(rows)) }
             "music.playlist.add_track" => { let pid=arg_i64(&args,"playlist_id")?; let tid=arg_i64(&args,"track_id")?; let conn=self.db()?; conn.execute("INSERT INTO playlist_tracks(playlist_id,track_id,position) VALUES(?1,?2,COALESCE((SELECT MAX(position)+1 FROM playlist_tracks WHERE playlist_id=?1),0))",params![pid,tid])?; Ok(json!({"added":true})) }
@@ -390,6 +421,26 @@ mod tests {
   app.execute("music.queue.set",json!({"track_ids":[1]})).unwrap();
   app.execute("music.metadata.update",json!({"track_id":1,"title":"Renamed","artist":"X","album":"Y"})).unwrap();
   assert_eq!(app.execute("music.queue.get",json!({})).unwrap()["items"][0]["track"]["title"],"Renamed");
+ }
+ #[test] fn lyrics_saved_then_sidecar_file(){
+  let dir=std::env::temp_dir().join(format!("openmusic-lyrics-test-{}",std::process::id()));
+  std::fs::create_dir_all(&dir).unwrap();
+  let audio=dir.join("song.mp3"); std::fs::write(&audio,b"").unwrap();
+  let app=MusicApp::open(":memory:").unwrap();
+  app.db().unwrap().execute("INSERT INTO tracks(id,path,title) VALUES(1,?1,'Song')",[audio.to_string_lossy().into_owned()]).unwrap();
+  assert_eq!(app.execute("music.lyrics.get",json!({"track_id":1})).unwrap(),Value::Null);
+  std::fs::write(dir.join("song.lrc"),"\u{feff}[ti:Song]\n[00:01.00]From the file").unwrap();
+  let l=app.execute("music.lyrics.get",json!({"track_id":1})).unwrap();
+  assert_eq!(l["source"],"file"); assert_eq!(l["synced"],true); assert_eq!(l["lines"][0]["time_ms"],1000); assert_eq!(l["lines"][0]["text"],"From the file");
+  let saved=app.execute("music.lyrics.set",json!({"track_id":1,"text":"  Plain words\nSecond line  "})).unwrap();
+  assert_eq!(saved["synced"],false); assert_eq!(saved["lines"][1]["text"],"Second line");
+  assert_eq!(app.execute("music.lyrics.get",json!({"track_id":1})).unwrap()["source"],"saved","saved lyrics win over the file");
+  assert_eq!(app.execute("music.lyrics.clear",json!({"track_id":1})).unwrap()["removed"],true);
+  assert_eq!(app.execute("music.lyrics.get",json!({"track_id":1})).unwrap()["source"],"file","file is untouched");
+  assert!(app.execute("music.lyrics.set",json!({"track_id":1,"text":"   "})).is_err());
+  assert!(app.execute("music.lyrics.set",json!({"track_id":9,"text":"x"})).is_err());
+  assert!(app.execute("music.lyrics.get",json!({"track_id":9})).is_err());
+  let _=std::fs::remove_dir_all(&dir);
  }
  #[test] fn queue_survives_reopen(){
   let path=std::env::temp_dir().join(format!("openmusic-queue-test-{}.sqlite",std::process::id()));

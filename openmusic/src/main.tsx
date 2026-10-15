@@ -11,7 +11,7 @@ function App({backend}:{backend:Backend}){
  const phone=useIsPhone();
  const [tracks,setTracks]=useState<Track[]>([]),[playlists,setPlaylists]=useState<Playlist[]>([]);
  const [selected,setSelected]=useState('Home'),[query,setQuery]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState('');
- const [status,setStatus]=useState<Playback>({track_id:null,playing:false,volume:.75,position_seconds:0,duration_seconds:null,queue_index:null,queue_length:0,queue_revision:-1,repeat:'off',shuffle:false,has_next:false});
+ const [status,setStatus]=useState<Playback>({track_id:null,playing:false,volume:.75,position_seconds:0,duration_seconds:null,position_ms:0,queue_index:null,queue_length:0,queue_revision:-1,repeat:'off',shuffle:false,has_next:false});
  const [queue,setQueue]=useState<QueueView|null>(null);
  const [currentPlaylist,setCurrentPlaylist]=useState<number|null>(null),[listTracks,setListTracks]=useState<Track[]>([]);
  async function refresh(){try{ const [songs,lists]=await Promise.all([command<Track[]>('music.library.list'),command<Playlist[]>('music.playlist.list')]);setTracks(songs);setPlaylists(lists);}catch(e){setError(e instanceof Error?e.message:String(e));}}
@@ -25,14 +25,15 @@ function App({backend}:{backend:Backend}){
  async function exec(name:string,args:Record<string,unknown>={}){try{setError('');await command(name,args); if(name==='music.playlist.create'||name==='music.playlist.add_track')await refresh(); setStatus(await command<Playback>('music.status'));}catch(e){setError(e instanceof Error?e.message:String(e));}}
  // Playing from a list queues the whole list, starting at the chosen song.
  function playFrom(list:Track[],track:Track,source:string){void exec('music.queue.set',{track_ids:list.map(t=>t.id),start_index:list.indexOf(track),source});}
- async function importMusic(){try{setError('');setNotice(web?'Saving songs to this device…':'Scanning music folder…');const result=await backend.importMusic();if(!result){setNotice('');return;}setNotice(`Imported ${result.imported} new tracks · ${result.already_present} already in library`);await refresh();}catch(e){setError(e instanceof Error?e.message:String(e));setNotice('');}}
+ async function importMusic(){try{setError('');setNotice(web?'Saving songs to this device…':'Scanning music folder…');const result=await backend.importMusic();if(!result){setNotice('');return;}setNotice(`Imported ${result.imported} new tracks · ${result.already_present} already in library${result.lyrics?` · lyrics for ${result.lyrics} ${result.lyrics===1?'song':'songs'}`:''}`);await refresh();}catch(e){setError(e instanceof Error?e.message:String(e));setNotice('');}}
  async function makePlaylist(){const name=window.prompt('New playlist name');if(name?.trim())await exec('music.playlist.create',{name:name.trim()});}
  async function addToPlaylist(track:Track){if(playlists.length===0){setNotice('Create a playlist first.');return;}const choice=window.prompt(`Add “${track.title}” to which playlist?\n${playlists.map(p=>`${p.id}: ${p.name}`).join('\n')}`);if(choice){const id=Number(choice);if(playlists.some(p=>p.id===id))await exec('music.playlist.add_track',{playlist_id:id,track_id:track.id});else setError('Invalid playlist ID.');}}
  function choose(where:string,pid:number|null=null){setSelected(where);setCurrentPlaylist(pid);setQuery('');}
  function time(s:number|null|undefined){if(s==null)return '—';return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;}
  if(phone)return <MobileApp web={web} tracks={tracks} playlists={playlists} status={status} playing={playing} queue={queue} error={error} notice={notice}
-  clearError={()=>setError('')} clearNotice={()=>setNotice('')} run={(name,args)=>void exec(name,args)} togglePlay={()=>void exec(status.playing?'music.pause':'music.resume')}
+  clearError={()=>setError('')} clearNotice={()=>setNotice('')} run={(name,args)=>void exec(name,args)} request={(name,args)=>command(name,args)} togglePlay={()=>void exec(status.playing?'music.pause':'music.resume')}
   seek={seconds=>void exec('music.seek',{seconds})} setVolume={volume=>void exec('music.volume.set',{volume})} importMusic={()=>void importMusic()} makePlaylist={()=>void makePlaylist()} addToPlaylist={t=>void addToPlaylist(t)}
+  extractAudio={backend.extractAudio} addAudioFile={backend.addAudioFile&&(async file=>{const r=await backend.addAudioFile!(file);await refresh();return r;})}
   playlistTracks={id=>command<Track[]>('music.playlist.tracks',{playlist_id:id}).catch(e=>{setError(String(e));return [];})}/>;
  return <div className="app">
  <aside className="sidebar"><div className="brand"><div className="logo"><Music2 size={22}/></div><strong>OpenMusic</strong></div><div className="side-label">DISCOVER</div>

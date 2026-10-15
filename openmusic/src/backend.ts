@@ -7,15 +7,24 @@ export type {QueueItem, QueueView, RepeatMode} from './queue';
 
 export type Track={id:number,path:string,title:string,artist:string,album:string,duration_seconds:number|null};
 export type Playlist={id:number,name:string};
-export type Playback={track_id:number|null,playing:boolean,volume:number,position_seconds:number,duration_seconds:number|null,
+export type Playback={track_id:number|null,playing:boolean,volume:number,position_seconds:number,duration_seconds:number|null,position_ms:number,
   queue_index:number|null,queue_length:number,queue_revision:number,repeat:RepeatMode,shuffle:boolean,has_next:boolean};
-export type ImportResult={imported:number,already_present:number};
+export type ImportResult={imported:number,already_present:number,
+  /** Web only: .lrc files matched to songs during this import. */
+  lyrics?:number};
+export type {LyricLine, Lyrics} from './lyrics';
+import type {ExtractedAudio} from './mp4audio';
+export type {ExtractedAudio} from './mp4audio';
 
 export interface Backend{
   kind:'desktop'|'web';
   command<T>(name:string,args?:Record<string,unknown>):Promise<T>;
   /** Asks the user for music (folder on desktop, files on web) and imports it. Null when cancelled. */
   importMusic():Promise<ImportResult|null>;
+  /** Copies a video's audio track into an .m4a without re-encoding. Web only for now (absent on desktop). */
+  extractAudio?(video:File):Promise<ExtractedAudio>;
+  /** Adds one audio file (e.g. an extracted .m4a) to the library. Web only for now. */
+  addAudioFile?(file:File):Promise<ImportResult>;
 }
 
 const isTauri=typeof window!=='undefined'&&'__TAURI_INTERNALS__' in window;
