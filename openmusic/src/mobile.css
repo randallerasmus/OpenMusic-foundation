@@ -132,6 +132,32 @@
 .m-empty h2{font-size:20px;margin:18px 0 6px}.m-empty p{color:var(--text2);font-size:15px;margin:0 0 18px}
 .m-primary{display:flex;align-items:center;gap:8px;background:var(--accent);color:#fff;font-weight:600;font-size:16px;padding:12px 20px;border-radius:999px}
 
+/* Search: suggestions, recent searches, category chips, Top Result */
+.m-suggest,.m-recent ul{list-style:none;margin:0;padding:0}
+.m-suggest button,.m-recent-item{display:flex;align-items:center;gap:12px;width:100%;min-height:48px;text-align:left;font-size:17px;border-bottom:.5px solid var(--sep);color:var(--text)}
+.m-suggest svg,.m-recent-item svg{color:var(--text2);flex:none}
+.m-suggest span,.m-recent-item span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-recent li{display:flex;align-items:center}
+.m-recent-x{width:36px;height:36px;display:grid;place-items:center;color:var(--text2);flex:none}
+.m-recent-head{display:flex;align-items:baseline;justify-content:space-between}
+.m-recent-head button{color:var(--accent);font-weight:600;font-size:15px}
+.m-recent-compact{margin-bottom:22px}
+.m-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:-4px -20px 18px;padding:0 20px}
+.m-chips::-webkit-scrollbar{display:none}
+.m-chip{flex:none;display:flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:999px;background:var(--fill);color:var(--text);font-size:14px;font-weight:600}
+.m-chip small{font-size:12px;font-weight:600;color:var(--text2)}
+.m-chip.on{background:var(--accent);color:#fff}
+.m-chip.on small{color:rgba(255,255,255,.8)}
+.m-top-card{display:flex;align-items:center;gap:12px;padding:14px;border-radius:16px;background:var(--fill)}
+.m-top-main{flex:1;min-width:0;display:flex;align-items:center;gap:14px;text-align:left}
+.m-top-art{width:72px;border-radius:10px}
+.m-top-art.round{border-radius:50%}
+.m-top-art svg{width:30px;height:30px}
+.m-top .m-track-text b{font-size:20px;font-weight:700}
+.m-top .m-track-text small{font-size:14px}
+.m-top-play{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--accent);color:#fff}
+.m-see-all{color:var(--accent);font-weight:600;font-size:15px;padding:10px 0 0}
+
 /* Song action sheet */
 .m-sheet-backdrop{position:fixed;inset:0;z-index:5;background:rgba(0,0,0,.28);display:flex;align-items:flex-end;padding:12px 12px max(12px,env(safe-area-inset-bottom));animation:m-fade .2s ease}
 @keyframes m-fade{from{opacity:0}}
