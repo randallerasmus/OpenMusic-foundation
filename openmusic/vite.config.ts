@@ -26,7 +26,8 @@ function offlineServiceWorker(): Plugin {
     apply: 'build',
     generateBundle(_, bundle) {
       // Host config files (_headers, .htaccess) aren't servable, and one failed fetch aborts the whole precache.
-      const publicFiles = readdirSync('public').filter(f => !f.startsWith('_') && !f.startsWith('.'));
+      // public/ffmpeg/ (the ~7 MB audio converter) is not precached: it is fetched and cached on first use.
+      const publicFiles = readdirSync('public').filter(f => !f.startsWith('_') && !f.startsWith('.') && f !== 'ffmpeg');
       // version.json is left out so it always reports what the server has, not what this device cached.
       const files = ['/', ...Object.keys(bundle).filter(f => f !== 'index.html' && f !== 'version.json'), ...publicFiles].map(f => f.startsWith('/') ? f : `/${f}`);
       const cacheName = 'openmusic-' + createHash('sha256').update(files.join('\n')).digest('hex').slice(0, 12);
@@ -35,11 +36,19 @@ const CACHE = ${JSON.stringify(cacheName)};
 const FILES = ${JSON.stringify(files)};
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys()
-  .then(keys => Promise.all(keys.filter(k => k.startsWith('openmusic-') && k !== CACHE).map(k => caches.delete(k))))
+  .then(keys => Promise.all(keys.filter(k => k.startsWith('openmusic-') && k !== CACHE && k !== 'openmusic-ffmpeg').map(k => caches.delete(k))))
   .then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  // The converter lives in versioned folders, so a cached copy never goes stale: cache it on first use.
+  if (url.pathname.startsWith('/ffmpeg/')) {
+    e.respondWith(caches.open('openmusic-ffmpeg').then(c => c.match(url.pathname).then(hit => hit || fetch(e.request).then(res => {
+      if (res.ok) c.put(url.pathname, res.clone());
+      return res;
+    }))));
+    return;
+  }
   // Pages always get the cached app shell; assets are served cache-first and fall back to the network.
   const key = e.request.mode === 'navigate' ? '/' : url.pathname;
   e.respondWith(caches.open(CACHE).then(c => c.match(key)).then(hit => hit || fetch(e.request)));
@@ -52,6 +61,8 @@ self.addEventListener('fetch', e => {
 // Cargo writes (and Windows locks) build artifacts under target/; watching them crashes the dev server.
 export default defineConfig({
   clearScreen: false,
+  // ffmpeg.wasm starts its own worker and loads the core by URL; Vite's dependency pre-bundling breaks that.
+  optimizeDeps: {exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util']},
   plugins: [versionFile(), offlineServiceWorker()],
   define: {__OPENMUSIC_BUILD__: JSON.stringify(buildInfo)},
   server: {port: 1420, strictPort: true, watch: {ignored: ['**/target/**', '**/src-tauri/**']}},

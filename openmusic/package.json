@@ -10,6 +10,8 @@
     "ship": "node scripts/ship.mjs"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "0.12.15",
+    "@ffmpeg/util": "0.12.2",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.8.3",
     "lucide-react": "^0.468.0",
